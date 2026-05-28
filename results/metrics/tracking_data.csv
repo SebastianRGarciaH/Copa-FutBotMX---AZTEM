@@ -1,0 +1,3 @@
+frame,time_sec,object_id,object_type,x,y,area,confidence
+1,0.04,1,robot,400,300,428655,1.0
+1,0.04,2,robot,200,150,112455,1.0
