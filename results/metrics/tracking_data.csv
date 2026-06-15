@@ -1,25 +1,25 @@
 frame,tiempo,id_objeto,tipo,equipo,x,y,area,intervencion_humana
-1,0.04,1,robot,Robot_1,217,436,3570,no
-1,0.04,2,robot,Robot_2,217,363,3570,no
-1,0.04,3,robot,Robot_3,313,581,3060,no
-1,0.04,4,robot,Robot_4,259,453,4080,no
-2,0.08,1,robot,Robot_1,310,645,2295,si
-2,0.08,2,robot,Robot_2,304,593,1785,si
-2,0.08,3,robot,Robot_3,233,661,3315,si
-2,0.08,4,robot,Robot_4,364,828,3825,si
-3,0.12,1,robot,Robot_1,220,377,2550,si
-3,0.12,2,robot,Robot_2,201,459,3570,si
-3,0.12,3,robot,Robot_3,225,538,3570,si
-3,0.12,4,robot,Robot_4,350,870,2040,no
-4,0.16,1,robot,Robot_1,315,422,4335,si
-4,0.16,2,robot,Robot_2,326,894,2040,si
-4,0.16,3,robot,Robot_3,276,524,4335,no
-4,0.16,4,robot,Robot_4,356,802,3825,no
-5,0.2,1,robot,Robot_1,277,229,3060,si
-5,0.2,2,robot,Robot_2,179,489,1785,si
-5,0.2,3,robot,Robot_3,178,493,2550,si
-5,0.2,4,robot,Robot_4,305,803,1530,no
-6,0.24,1,robot,Robot_1,333,760,2295,si
-6,0.24,2,robot,Robot_2,267,550,3825,si
-6,0.24,3,robot,Robot_3,275,549,5355,si
-6,0.24,4,robot,Robot_4,356,852,3825,si
+1,0.04,1,robot,Equipo A,57.91,39.18,3570,no
+1,0.04,2,robot,Equipo A,48.21,39.18,3570,no
+1,0.04,3,robot,Equipo B,77.16,56.51,3060,no
+1,0.04,4,robot,Equipo B,60.16,46.76,4080,no
+2,0.08,1,robot,Equipo A,85.66,55.97,2295,si
+2,0.08,2,robot,Equipo A,78.76,54.89,1785,si
+2,0.08,3,robot,Equipo B,87.79,42.07,3315,no
+2,0.08,4,robot,Equipo B,109.97,65.72,3825,si
+3,0.12,1,robot,Equipo A,71.45,40.62,3570,no
+3,0.12,2,robot,Equipo A,60.96,36.29,3570,si
+3,0.12,3,robot,Equipo B,50.07,39.72,2550,si
+3,0.12,4,robot,Equipo B,115.55,63.19,2040,no
+4,0.16,1,robot,Equipo A,118.73,58.86,2040,si
+4,0.16,2,robot,Equipo A,69.59,49.83,4335,no
+4,0.16,3,robot,Equipo B,56.05,56.88,4335,no
+4,0.16,4,robot,Equipo B,106.52,64.28,3825,no
+5,0.2,1,robot,Equipo A,106.65,55.07,1530,no
+5,0.2,2,robot,Equipo A,65.48,32.14,2550,no
+5,0.2,3,robot,Equipo B,30.41,50.01,3060,si
+5,0.2,4,robot,Equipo B,64.95,32.32,1785,si
+6,0.24,1,robot,Equipo A,73.05,48.21,3825,si
+6,0.24,2,robot,Equipo A,113.16,64.28,3825,si
+6,0.24,3,robot,Equipo B,100.94,60.12,2295,si
+6,0.24,4,robot,Equipo B,72.91,49.65,5355,no
