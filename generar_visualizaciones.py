@@ -1,11 +1,29 @@
 """
 ================================================================
  generar_visualizaciones.py
- LEE tracking.csv (Y eventos.csv si existe) Y GENERA TODAS LAS
- VISUALIZACIONES POSIBLES, RESCATANDO EL MAXIMO DE DATOS.
+ LEE tracking_real.csv DIRECTAMENTE (Y eventos.csv si existe) Y
+ GENERA TODAS LAS VISUALIZACIONES + UN GIF DE RASTREO, RESCATANDO
+ EL MAXIMO DE DATOS.
 ================================================================
- Diseñado para tolerar:
-   - falta de balon -> usa heatmap de robots y trayectoria individual
+ Ya NO requiere adaptador_datos.py: la normalizacion del CSV real
+ se hace en memoria dentro de cargar_tracking().
+
+ CSV REAL (entrada): frame, tiempo, id_objeto, tipo, equipo,
+                     x, y, area, intervencion_humana
+
+ Normalizacion interna (lo que el resto del codigo espera):
+   1. id_objeto              -> objeto_id
+   2. tipo "robot" + equipo  -> robot_aliado / robot_rival
+      tipo "balon"           -> balon
+   3. x, y escalados px->cm  (por defecto x1; ajustable)
+   4. area / intervencion_humana se preservan tal cual
+
+ Salidas:
+   01..12 -> PNG estaticos
+   13     -> GIF de rastroe animado (mismo estilo blanco)
+
+ Tolera:
+   - falta de balon  -> heatmap de robots y trayectoria individual
    - falta de eventos -> detecta colisiones del tracking,
                          genera red de pases por proximidad
    - extras (area, intervencion_humana) -> graficas nuevas
@@ -17,7 +35,75 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.animation as animation
 import cancha_template as ct
+
+
+# =============================================================
+# CONFIGURACION DE NORMALIZACION  (antes vivia en adaptador_datos.py)
+# =============================================================
+ARCHIVO_TRACKING = "tracking_data.csv"
+
+# Que valor de la columna "equipo" es tu equipo (aliado) y cual el rival.
+# Ajusta a como te entreguen los datos. Acepta los nombres reales actuales.
+ROBOTS_ALIADOS = ["Equipo A"]
+ROBOTS_RIVALES = ["Equipo B"]
+
+# Conversion pixeles -> cm. Los datos ya vienen en cm, asi que = 1.
+# Si en el futuro entregan pixeles, cambia estos factores.
+PX_A_CM_X = 1
+PX_A_CM_Y = 1
+
+# --- Config del GIF ---
+RUTA_GIF_SALIDA = "13_rastreo.gif"
+VENTANA_ESTELA = 10     # cuantos frames atras dibuja la estela
+GIF_FPS = 5             # cuadros por segundo del GIF
+COLOR_TIPO = {
+    "robot_aliado": ct.PALETA["aliado"],
+    "robot_rival": ct.PALETA["rival"],
+    "balon": ct.PALETA["balon"],
+}
+
+
+def cargar_tracking(ruta=ARCHIVO_TRACKING):
+    """Lee el CSV real y devuelve un DataFrame normalizado con las
+    columnas que usan el resto de las funciones: frame, tiempo,
+    objeto_id, tipo (robot_aliado/robot_rival/balon), x, y y los
+    extras (equipo, area, intervencion_humana) si existen."""
+    df = pd.read_csv(ruta)
+    print(f"Leido {ruta}: {len(df)} filas")
+    print(f"   columnas originales: {list(df.columns)}")
+
+    # 1. id_objeto -> objeto_id
+    if "id_objeto" in df.columns:
+        df = df.rename(columns={"id_objeto": "objeto_id"})
+
+    # 2. tipo + equipo -> robot_aliado / robot_rival / balon
+    def clasificar(row):
+        if str(row.get("tipo", "")).lower() == "balon":
+            return "balon"
+        equipo = str(row.get("equipo", "")).strip()
+        if equipo in ROBOTS_ALIADOS:
+            return "robot_aliado"
+        if equipo in ROBOTS_RIVALES:
+            return "robot_rival"
+        return "robot_aliado"   # fallback seguro
+
+    if "tipo" in df.columns:
+        df["tipo"] = df.apply(clasificar, axis=1)
+
+    # 3. Escalar px -> cm
+    df["x"] = df["x"] * PX_A_CM_X
+    df["y"] = df["y"] * PX_A_CM_Y
+
+    # 4. Reordenar dejando base + extras preservados
+    base = ["frame", "tiempo", "objeto_id", "tipo", "x", "y"]
+    extras = [c for c in ("equipo", "area", "intervencion_humana")
+              if c in df.columns]
+    df = df[[c for c in base if c in df.columns] + extras]
+
+    print(f"   tipos detectados: {df['tipo'].value_counts().to_dict()}")
+    return df
 
 
 # ---------- helpers ----------
@@ -177,9 +263,76 @@ def grafica_distancia_acumulada(tracking, archivo="12_distancia.png"):
     return True
 
 
+# ---------- GIF animado (mismo estilo blanco) ----------
+def generar_gif(tracking, archivo=RUTA_GIF_SALIDA, fps=GIF_FPS,
+                ventana_estela=VENTANA_ESTELA):
+    """Renderiza un GIF de rastreo cuadro por cuadro usando la cancha
+    blanca de cancha_template. Conserva estela, ID dentro del robot y
+    alerta de intervencion humana."""
+    frames_unicos = sorted(tracking["frame"].unique())
+    if not frames_unicos:
+        return False
+
+    fig, ax = plt.subplots(figsize=(11, 8))
+
+    def actualizar_cuadro(num_frame):
+        ax.clear()
+        ct.dibujar_cancha(ax=ax)
+
+        t = tracking.loc[tracking["frame"] == num_frame, "tiempo"]
+        t_txt = f"t = {t.iloc[0]:.1f} s" if len(t) else ""
+        ct._titulo(ax, "Rastreo de robots", f"Frame {num_frame}   ·   {t_txt}")
+        ct._firma(ax)
+
+        datos_frame = tracking[tracking["frame"] == num_frame]
+        for _, robot in datos_frame.iterrows():
+            r_id = int(robot["objeto_id"])
+            color = COLOR_TIPO.get(robot["tipo"], ct.PALETA["aviso"])
+            x_pos, y_pos = robot["x"], robot["y"]
+
+            # Estela: ultimos N frames de ese robot
+            historial = tracking[(tracking["objeto_id"] == r_id) &
+                                 (tracking["frame"] <= num_frame) &
+                                 (tracking["frame"] > num_frame - ventana_estela)
+                                 ].sort_values("frame")
+            if len(historial) > 1:
+                ax.plot(historial["x"], historial["y"], color=color,
+                        alpha=0.35, linewidth=2, linestyle="--", zorder=4)
+
+            # Chasis circular + ID
+            ax.scatter(x_pos, y_pos, color=color, s=360,
+                       edgecolors="white", linewidths=2, zorder=5)
+            ax.text(x_pos, y_pos, str(r_id), color="white", ha="center",
+                    va="center", fontweight="bold", fontsize=10, zorder=6,
+                    family=ct.FUENTE)
+
+            # Alerta de intervencion humana
+            if str(robot.get("intervencion_humana", "")).lower() == "si":
+                ax.scatter(x_pos, y_pos, s=720, edgecolors=ct.PALETA["aviso"],
+                           facecolors="none", linewidths=3, zorder=4)
+                ax.text(x_pos, y_pos + 9, "MANO", color=ct.PALETA["aviso"],
+                        ha="center", va="bottom", fontsize=8,
+                        fontweight="bold", zorder=6, family=ct.FUENTE)
+
+        ct._leyenda(ax, [
+            (ct.PALETA["aliado"], "Robots aliados", "o"),
+            (ct.PALETA["rival"], "Robots rivales", "o"),
+            (ct.PALETA["aviso"], "Intervencion humana", "o"),
+        ], loc="upper right")
+
+    print(f"   renderizando {len(frames_unicos)} cuadros del GIF...")
+    ani = animation.FuncAnimation(fig, actualizar_cuadro,
+                                  frames=frames_unicos, interval=1000 / fps)
+    ani.save(archivo, writer="pillow", fps=fps, dpi=110)
+    plt.close(fig)
+    return True
+
+
 # ---------- main ----------
 def main():
-    tracking = pd.read_csv("tracking.csv")
+    # >>> Antes: pd.read_csv("tracking.csv") (requeria adaptador).
+    # >>> Ahora: se lee y normaliza tracking_real.csv directamente.
+    tracking = cargar_tracking(ARCHIVO_TRACKING)
     eventos = pd.read_csv("eventos.csv") if os.path.exists("eventos.csv") else None
 
     print(f"Tracking: {len(tracking)} filas, "
@@ -235,14 +388,29 @@ def main():
         ct.guardar("05_tiros.png"); generadas.append("05_tiros.png")
 
     # 06 Voronoi: snapshot a la mitad
-    frame_medio = int(tracking["frame"].median())
-    snap = tracking[tracking["frame"] == frame_medio]
-    aliados_xy = [(r.x, r.y) for r in snap[snap["tipo"] == "robot_aliado"].itertuples()]
-    rivales_xy = [(r.x, r.y) for r in snap[snap["tipo"] == "robot_rival"].itertuples()]
-    if len(aliados_xy) + len(rivales_xy) >= 2:
+    # Robusto a frames con huecos o detecciones incompletas: probamos
+    # frames desde el centro hacia afuera y nos quedamos con el primero
+    # que tenga al menos 2 robots. Si ninguno sirve, avisamos.
+    frames_ordenados = sorted(tracking["frame"].unique())
+    snap, frame_medio = None, None
+    if frames_ordenados:
+        centro = len(frames_ordenados) // 2
+        orden = sorted(range(len(frames_ordenados)),
+                       key=lambda i: abs(i - centro))
+        for i in orden:
+            f = int(frames_ordenados[i])
+            cand = tracking[tracking["frame"] == f]
+            if len(cand) >= 2:
+                snap, frame_medio = cand, f
+                break
+    if snap is not None:
+        aliados_xy = [(r.x, r.y) for r in snap[snap["tipo"] == "robot_aliado"].itertuples()]
+        rivales_xy = [(r.x, r.y) for r in snap[snap["tipo"] == "robot_rival"].itertuples()]
         ct.voronoi_control(aliados_xy, rivales_xy, "Control de espacio",
                            f"Instante: frame {frame_medio}, t={snap['tiempo'].iloc[0]:.1f}s")
         ct.guardar("06_voronoi.png"); generadas.append("06_voronoi.png")
+    else:
+        print("   [06] Voronoi omitido: ningun frame tiene >=2 robots.")
 
     # 07 Posesion por zonas: con balon o con dominio territorial de robots
     if len(balon) > 0:
@@ -327,6 +495,10 @@ def main():
     # 12 Distancia recorrida por robot
     if grafica_distancia_acumulada(tracking):
         generadas.append("12_distancia.png")
+
+    # 13 GIF de rastreo animado
+    if generar_gif(tracking):
+        generadas.append(RUTA_GIF_SALIDA)
 
     print(f"\nGeneradas {len(generadas)} visualizaciones:")
     for g in generadas:

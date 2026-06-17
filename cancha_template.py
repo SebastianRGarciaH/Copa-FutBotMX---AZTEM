@@ -19,8 +19,8 @@ PALETA = {
     "acento": "#0066cc", "aliado": "#0066cc", "rival": "#e8553a",
     "balon": "#2b3a4a", "exito": "#1aa179", "fallo": "#d64545", "aviso": "#e0a020",
 }
-CANCHA = {"largo": 170, "ancho": 130, "area_largo": 30, "area_ancho": 70,
-          "porteria_ancho": 35, "circulo_radio": 20, "margen": 10, "grid_paso": 17}
+CANCHA = {"largo": 219, "ancho": 158, "area_largo": 25, "area_ancho": 80,
+          "porteria_ancho": 60, "circulo_radio": 30, "margen": 12, "grid_paso": 20}
 
 def _fuente():
     preferidas = ["DejaVu Sans", "Helvetica Neue", "Arial", "Liberation Sans"]
