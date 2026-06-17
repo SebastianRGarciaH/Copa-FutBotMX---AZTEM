@@ -4,12 +4,11 @@ import os
 from scipy.optimize import linear_sum_assignment
 
 def calcular_distancia_euclidiana(p1, p2):
-    """Calcula la distancia geométrica real en la cancha (escala 170x130)."""
     return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
 
 def main():
     print("==================================================================")
-    print("=== MÓDULO A2: TRACKING GLOBAL CON INICIO LONGITUDINAL VISUAL ===")
+    print("=== MÓDULO A2: TRACKING CON CANDADO DE IDENTIDAD INMUTABLE =======")
     print("==================================================================")
     
     ruta_entrada = "results/metrics/raw_centroids.csv"
@@ -24,150 +23,126 @@ def main():
         print("[!] El archivo raw_centroids.csv no tiene datos.")
         return
 
-    # CONTRATO SAGRADO DE EQUIPOS: Fijado por ID desde el inicio de los tiempos
     MAPEO_EQUIPOS = {
-        1: "Equipo A", 2: "Equipo A",  # IDs 1 y 2 siempre serán Equipo A
-        3: "Equipo B", 4: "Equipo B"   # IDs 3 y 4 siempre serán Equipo B
+        1: "Equipo A", 2: "Equipo A",
+        3: "Equipo B", 4: "Equipo B"
     }
 
-    # Estructura de memoria persistente para los 4 robots oficiales
-    historial_robots = {1: (0.0, 0.0), 2: (0.0, 0.0), 3: (0.0, 0.0), 4: (0.0, 0.0)}
-    primer_frame_inicializado = False
+    # ⚙️ CONFIGURACIÓN DE FILTRADO CINEMÁTICO ESTRICTO
+    ALPHA_SUAVIZADO = 0.20       # Filtro pesado (0.20): Absorbe por completo el jitter y latigazos
+    UMBRAL_MATCH_MAX = 35.0      # Radio máximo de desplazamiento lógico por cuadro (cm)
     
+    # Estructura de memoria persistente para el ciclo de vida de los 4 robots
+    historial_robots = {1: None, 2: None, 3: None, 4: None}
     datos_rastreados = []
-    UMBRAL_INTERVENCION = 35.0  
-
     lista_frames = sorted(df_raw['frame'].unique())
 
-    print("[INFO] Ejecutando ordenamiento por visualización de porterías (X Landscape) y rastreo continuo...")
+    print("[INFO] Rastreando trayectorias con bloqueo de robo de identidad...")
     for frame in lista_frames:
         df_frame = df_raw[df_raw['frame'] == frame]
         tiempo_seg = df_frame['tiempo'].iloc[0]
-        # Extraemos detecciones crudas
         detecciones_actuales = df_frame[['x', 'y', 'area']].to_dict('records')
         
-        ids_emparejados_este_frame = set()
+        ids_activos_este_frame = set()
         mapeo_deteccion_a_id = {}
         
-        # --------------------------------------------------------------
-        # 📋 FASE 1: DETERMINACIÓN AUTOMÁTICA EN EL PRIMER FRAME (KICKOFF)
-        # --------------------------------------------------------------
-        # NUEVA LÓGICA: Ordenar DESPUÉS de voltear las coordenadas a Landscape.
-        if not primer_frame_inicializado:
+        # 📋 PASO 1: ASOCIACIÓN GLOBAL EXCLUSIVA (ALGORITMO HÚNGARO)
+        ids_historicos_activos = [i for i in [1, 2, 3, 4] if historial_robots[i] is not None]
+        
+        if ids_historicos_activos and detecciones_actuales:
+            posiciones_referencia = [historial_robots[i]['pos_smooth'] for i in ids_historicos_activos]
+            matriz_costos = np.zeros((len(ids_historicos_activos), len(detecciones_actuales)))
             
-            detecciones_con_landscape = []
-            for i, det in enumerate(detecciones_actuales):
-                # Volteamos las coordenadas crudas de OpenCV a formato Landscape (A3)
-                # Raw Y -> Landscape X (Eje Largo 0-170, Goal-to-Goal)
-                # Raw X -> Landscape Y (Eje Corto 0-130, Lateral)
-                landscape_x = det['y']
-                landscape_y = det['x']
-                
-                # Guardamos la versión volteada junto con su índice crudo original
-                detecciones_con_landscape.append({
-                    'original_index': i,
-                    'lx': landscape_x, # Coordenada visual longitudinal
-                    'det_cruda': det
-                })
-                
-            # ORDENAMOS basándonos en 'lx' (Eje Largo Visual)
-            # Esto pone a los robots en orden secuencial de portería A a portería B.
-            detecciones_landscape_ordenadas = sorted(detecciones_con_landscape, key=lambda d: d['lx'])
+            for i, pos_ref in enumerate(posiciones_referencia):
+                for j, det in enumerate(detecciones_actuales):
+                    matriz_costos[i, j] = calcular_distancia_euclidiana(pos_ref, (det['x'], det['y']))
             
-            # ASIGNACIÓN DE IDs PERMANENTE
-            for idx in range(4):
-                r_id = idx + 1 # IDs: 1, 2, 3, 4
-                if idx < len(detecciones_landscape_ordenadas):
-                    # Robot detectado físicamente
-                    det_flipped = detecciones_landscape_ordenadas[idx]
-                    det_raw = det_flipped['det_cruda']
-                    
-                    # Actualizamos la memoria con las coordenadas CRUDAS (X, Y de cámara)
-                    historial_robots[r_id] = (det_raw['x'], det_raw['y'])
-                    
-                    # Mapeamos el índice crudo de OpenCV al ID permanente
-                    ids_emparejados_este_frame.add(r_id)
-                    mapeo_deteccion_a_id[det_flipped['original_index']] = r_id
-                else:
-                    # Respaldo si el frame 1 no tuviera los 4 robots completos (Mano en medio)
-                    historial_robots[r_id] = (0.0, 0.0)
-                    
-            primer_frame_inicializado = True
-            
-        # --------------------------------------------------------------
-        # 📋 FASE 2: ASOCIACIÓN GLOBAL PERMANENTE (ALGORITMO HÚNGARO)
-        # --------------------------------------------------------------
-        elif detecciones_actuales:
-            lista_ids = [1, 2, 3, 4]
-            posiciones_viejas = [historial_robots[i] for i in lista_ids]
-            
-            # Matriz de costos (4 tracking histórico x N detecciones actuales crudas)
-            matriz_costos = np.zeros((4, len(detecciones_actuales)))
-            for i, pos_vieja in enumerate(posiciones_viejas):
-                for j, det_actual in enumerate(detecciones_actuales):
-                    matriz_costos[i, j] = calcular_distancia_euclidiana(pos_vieja, (det_actual['x'], det_actual['y']))
-            
-            # Asociación global óptima para minimizar el movimiento del grupo
             filas_ind, col_ind = linear_sum_assignment(matriz_costos)
-            
             for f, c in zip(filas_ind, col_ind):
-                r_id = lista_ids[f]
-                # Filtro de seguridad (no emparejar si el salto es ridículo >75cm)
-                if matriz_costos[f, c] > 75.0:
-                    continue
-                mapeo_deteccion_a_id[c] = r_id
-                ids_emparejados_este_frame.add(r_id)
+                # Si el costo es menor al umbral físico, el robot se movió a esa posición
+                if matriz_costos[f, c] <= UMBRAL_MATCH_MAX:
+                    r_id = ids_historicos_activos[f]
+                    mapeo_deteccion_a_id[c] = r_id
+                    ids_activos_este_frame.add(r_id)
 
-        # --------------------------------------------------------------
-        # 📋 FASE 3: CONSOLIDACIÓN Y GARANTÍA DE LAS 4 FILAS OBLIGATORIAS
-        # --------------------------------------------------------------
+        # 📋 PASO 2: INICIALIZACIÓN BAJO DEMANDA (SÓLO EN ESPACIOS VÍRGENES)
+        for idx_det, det in enumerate(detecciones_actuales):
+            if idx_det not in mapeo_deteccion_a_id:
+                landscape_x_test = det['y']  # Filtro longitudinal
+                
+                if landscape_x_test < 85.0:
+                    ids_preferidos = [1, 2]
+                else:
+                    ids_preferidos = [3, 4]
+                
+                # CANDADO CRÍTICO: Sólo se puede usar el ID si nunca antes se ha inicializado (es None)
+                # Esto impide por completo que un robot le robe el ID a otro que está coasting.
+                ids_disponibles = [i for i in ids_preferidos if historial_robots[i] is None]
+                
+                if ids_disponibles:
+                    r_id = ids_disponibles[0]
+                    mapeo_deteccion_a_id[idx_det] = r_id
+                    ids_activos_este_frame.add(r_id)
+                    
+                    historial_robots[r_id] = {
+                        'pos_smooth': (det['x'], det['y']),
+                        'pos_raw': (det['x'], det['y'])
+                    }
+
+        # 📋 PASO 3: FILTRADO TEMPORAL SUAVIZADO Y RENDERIZADO DE LAS 4 FILAS
         for r_id in [1, 2, 3, 4]:
             intervencion = "no"
             
-            if r_id in ids_emparejados_este_frame:
-                # Extraer valores reales si el robot fue detectado
-                idx_det = [k for k, v in mapeo_deteccion_a_id.items() if v == r_id][0]
-                det = detecciones_actuales[idx_det]
+            if r_id in ids_activos_este_frame:
+                idx_origen = [k for k, v in mapeo_deteccion_a_id.items() if v == r_id][0]
+                det = detecciones_actuales[idx_origen]
+                pos_raw_nueva = (det['x'], det['y'])
                 
-                pos_anterior = historial_robots[r_id]
-                # Validar brinco de intervención humana
-                if pos_anterior != (0.0, 0.0) and calcular_distancia_euclidiana((det['x'], det['y']), pos_anterior) > UMBRAL_INTERVENCION:
-                    intervencion = "si"
+                estado_previo = historial_robots[r_id]
+                pos_smooth_ant = estado_previo['pos_smooth']
                 
-                # Actualizar memoria persistente con coordenadas CRUDAS
-                historial_robots[r_id] = (det['x'], det['y'])
-                area_salida = int(det['area'])
+                # Aplicación del Filtro Exponencial Pasabajas
+                x_smooth = ALPHA_SUAVIZADO * pos_raw_nueva[0] + (1.0 - ALPHA_SUAVIZADO) * pos_smooth_ant[0]
+                y_smooth = ALPHA_SUAVIZADO * pos_raw_nueva[1] + (1.0 - ALPHA_SUAVIZADO) * pos_smooth_ant[1]
+                pos_smooth_nueva = (x_smooth, y_smooth)
+                
+                historial_robots[r_id] = {
+                    'pos_smooth': pos_smooth_nueva,
+                    'pos_raw': pos_raw_nueva
+                }
+                
+                area_out = int(det['area'])
+                x_out = float(pos_smooth_nueva[1])  # Mapeo a Landscape X (Longitudinal 170cm)
+                y_out = float(pos_smooth_nueva[0])  # Mapeo a Landscape Y (Lateral 130cm)
+                
             else:
-                # Si el robot se ocluye, mantiene su posición previa intacta en memoria (coasting)
-                area_salida = 0
-            
-            # 🔄 VOLTEO FINAL DE PERSPECTIVA OBLIGATORIO A LANDSCAPE (A3)
-            # Volvemos a aplicar la lógica: Raw Y -> Landscape X, Raw X -> Landscape Y
-            pos_final_cruda = historial_robots[r_id]
-            x_landscape = float(pos_final_cruda[1]) # Eje Largo Goal-to-Goal
-            y_landscape = float(pos_final_cruda[0]) # Eje Corto Lateral
+                # 🛡️ PROTECCIÓN MEMORIA PERSISTENTE
+                # Si el robot no fue detectado, mantiene congelada su última posición exacta calculada
+                if historial_robots[r_id] is not None:
+                    estado_congelado = historial_robots[r_id]['pos_smooth']
+                    x_out = float(estado_congelado[1])
+                    y_out = float(estado_congelado[0])
+                    area_out = 0
+                else:
+                    # El robot aún no se ha presentado en la lona
+                    x_out = 0.0
+                    y_out = 0.0
+                    area_out = 0
             
             datos_rastreados.append({
-                "frame": int(frame),
-                "tiempo": float(tiempo_seg),
-                "id_objeto": int(r_id),
-                "tipo": "robot",
-                "equipo": MAPEO_EQUIPOS[r_id], # El equipo está amarrado al ID eternamente
-                "x": x_landscape,
-                "y": y_landscape,
-                "area": area_salida,
+                "frame": int(frame), "tiempo": float(tiempo_seg), "id_objeto": int(r_id),
+                "tipo": "robot", "equipo": MAPEO_EQUIPOS[r_id],
+                "x": round(x_out, 2), "y": round(y_out, 2), "area": area_out,
                 "intervencion_humana": intervencion
             })
 
-    # Construcción y guardado del DataFrame sanitizado final
+    # Guardado seguro de la matriz limpia
     df_final = pd.DataFrame(datos_rastreados)
     columnas_exactas = ["frame", "tiempo", "id_objeto", "tipo", "equipo", "x", "y", "area", "intervencion_humana"]
     df_final = df_final[columnas_exactas].sort_values(by=["frame", "id_objeto"]).reset_index(drop=True)
     df_final.to_csv(ruta_salida, index=False)
-    
-    print(f"[OK] Módulo A2 exitoso. Registradas {len(df_final)} filas totales (4 por frame estrictas).")
+    print(f"[OK] Módulo A2 exitoso. Saltos instantáneos e intercambios eliminados de la lona.")
     print("==================================================================")
-    print(df_final.head(12).to_string(index=False))
 
 if __name__ == "__main__":
     main()
