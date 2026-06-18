@@ -16,7 +16,3 @@
 | **1:40 - 2:00** | Cierre: Despedida, vista rápida del repositorio en GitHub o placa de agradecimiento. | > "Este pipeline abre la puerta al análisis automatizado de partidos de fútbol robótico. Como trabajo futuro, exploraremos detección de eventos como pases y tiros." |
 
 ---
-
-### 📝 Notas para la grabación:
-* **Sincronización:** Asegúrense de que los cambios de pantalla en el editor de video coincidan con los tiempos marcados en la tabla.
-* **Ritmo:** Lean la narración con pausas; los bloques de texto son cortos para que tengan tiempo de respirar sin pasarse de los 2 minutos límite.
