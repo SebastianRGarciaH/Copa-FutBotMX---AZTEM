@@ -1,53 +1,3 @@
-"""
-================================================================
- 06_generate_visualizations.py — Copa FutBotMX · Equipo AZTEM
- Motor unificado de visualizaciones + animación GIF
-================================================================
- UBICACIÓN ESPERADA: <raíz_del_proyecto>/src/06_generate_visualizations.py
-
- ESTRUCTURA DE CARPETAS:
-   <raíz_del_proyecto>/
-     results/
-       metrics/
-         tracking_data.csv
-         game_events.csv
-       visualizations/        <- aquí se guardan TODAS las salidas
-     src/
-       06_generate_visualizations.py   <- este archivo
-
- Las rutas se calculan a partir de la ubicación de este archivo
- (no del directorio desde el que se ejecute), así que el script
- funciona sin importar desde dónde se llame.
-
- FUENTES DE DATOS:
-   - results/metrics/tracking_data.csv → posiciones frame a frame
-       Columnas reales: frame, tiempo, id_objeto, tipo, equipo, x, y, area, intervencion_humana
-       tipo   = "robot" | "balon"
-       equipo = "Equipo A" | "Equipo B" | "balon"
-       ⚠ El balón SÍ viene como una fila más (tipo == "balon",
-         id_objeto == 0) y se clasifica aparte para que nunca se
-         dibuje como si fuera un robot.
-
-   - results/metrics/game_events.csv → eventos reales del partido
-       Columnas reales: frame, tiempo, evento, robot_implicado, equipo, detalles
-       evento = "Control de Balon" | "Tiro a Gol / Despeje"
-================================================================
- NOTA SOBRE EL MOTOR DE DIBUJO:
- Antes vivía en cancha_template.py (módulo aparte). Ahora está
- incluido en este mismo archivo para no depender de un import
- externo.
-
- NOTA SOBRE EL GIF:
- Las vistas estáticas se exportan con guardar(), que usa
- bbox_inches="tight" para recortar el margen blanco sobrante.
- matplotlib.animation no soporta ese recorte por cuadro, así que
- el GIF ya NO se genera con FuncAnimation: cada cuadro se renderiza
- y se recorta exactamente igual que un PNG (mismo bbox_inches
- "tight", mismo dpi) y luego se compone con Pillow. Así el GIF
- queda con las mismas proporciones que el resto de las vistas.
-================================================================
-"""
-
 import os
 import io
 import numpy as np
@@ -68,7 +18,7 @@ except ImportError:
 
 
 # ================================================================
-# MOTOR DE DIBUJO DE CANCHA (antes cancha_template.py)
+# MOTOR DE DIBUJO DE CANCHA
 # ================================================================
 PALETA = {
     "fondo": "#ffffff", "cancha": "#f7f9fb", "grid": "#e3e8ee",
@@ -145,9 +95,11 @@ def dibujar_cancha(ax=None, figsize=(13, 9), con_grid=True, con_ejes=True):
     ax.add_patch(patches.Rectangle((0, 0), largo, ancho, fill=False,
                  edgecolor=lin, linewidth=lw, zorder=2))
     ax.plot([largo / 2, largo / 2], [0, ancho], color=lin, linewidth=lw, zorder=2)
+
+    # Círculo central: solo borde, garantizado sin relleno
     ax.add_patch(patches.Circle((largo / 2, ancho / 2), CANCHA["circulo_radio"],
                  fill=False, edgecolor=lin, linewidth=lw, zorder=2))
-    ax.add_patch(patches.Circle((largo / 2, ancho / 2), 1.6, color=lin, zorder=2))
+
     area_y = (ancho - CANCHA["area_ancho"]) / 2
     for x0 in (0, largo - CANCHA["area_largo"]):
         ax.add_patch(patches.Rectangle((x0, area_y), CANCHA["area_largo"],
@@ -167,17 +119,23 @@ def dibujar_cancha(ax=None, figsize=(13, 9), con_grid=True, con_ejes=True):
 
 
 def _leyenda(ax, items, loc="upper right"):
-    leg = ax.legend(handles=[
-        plt.Line2D([0], [0], marker=mk, color="none", markerfacecolor=c,
-                   markeredgecolor="none", markersize=11, label=lbl)
-        for c, lbl, mk in items], loc=loc, frameon=True, fontsize=9,
-        labelcolor=PALETA["texto"], handletextpad=0.4)
+    # Si detectamos una línea (para la red de pases), ajustamos el handle
+    handles = []
+    for c, lbl, mk in items:
+        if mk in ["-", "--"]:
+            handles.append(plt.Line2D([0], [0], color=c, linestyle=mk, lw=2.5, label=lbl))
+        else:
+            handles.append(plt.Line2D([0], [0], marker=mk, color="none", markerfacecolor=c,
+                                      markeredgecolor="none", markersize=11, label=lbl))
+
+    leg = ax.legend(handles=handles, loc=loc, frameon=True, fontsize=9,
+                    labelcolor=PALETA["texto"], handletextpad=0.4)
     leg.get_frame().set_facecolor("#ffffff")
     leg.get_frame().set_edgecolor(PALETA["grid"])
     leg.get_frame().set_alpha(0.95)
 
 
-def heatmap(xs, ys, titulo="Mapa de calor", subtitulo=None, bins=40):
+def heatmap(xs, ys, titulo="Mapa de calor", subtitulo=None, bins=40, mostrar_cbar=True):
     fig, ax = dibujar_cancha(con_grid=False)
     heat, _, _ = np.histogram2d(xs, ys, bins=bins,
         range=[[0, CANCHA["largo"]], [0, CANCHA["ancho"]]])
@@ -187,12 +145,17 @@ def heatmap(xs, ys, titulo="Mapa de calor", subtitulo=None, bins=40):
         (0.00, (1, 1, 1, 0)), (0.20, (0.30, 0.55, 0.85, 0.45)),
         (0.50, (0.45, 0.35, 0.75, 0.70)), (0.78, (0.90, 0.45, 0.30, 0.85)),
         (1.00, (0.80, 0.10, 0.15, 0.95))])
+
+    # IMPORTANTE: aspect="equal" para que no deforme el mapa respecto a las otras vistas
     im = ax.imshow(heat.T, extent=[0, CANCHA["largo"], 0, CANCHA["ancho"]],
                    origin="lower", cmap=cmap, interpolation="bilinear",
-                   zorder=1, aspect="auto")
-    cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
-    cbar.set_label("Densidad de presencia", fontsize=8, color=PALETA["texto_tenue"])
-    cbar.ax.tick_params(labelsize=6, colors=PALETA["texto_tenue"])
+                   zorder=1, aspect="equal")
+
+    if mostrar_cbar:
+        cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+        cbar.set_label("Densidad de presencia", fontsize=8, color=PALETA["texto_tenue"])
+        cbar.ax.tick_params(labelsize=6, colors=PALETA["texto_tenue"])
+
     _titulo(ax, titulo, subtitulo); _firma(ax)
     return fig, ax
 
@@ -221,21 +184,32 @@ def trayectoria(xs, ys, titulo="Trayectoria", subtitulo=None, color=None):
 
 
 def mapa_pases(pases, titulo="Mapa de pases", subtitulo=None):
+    """
+    Dibuja cada pase como una flecha sobre la trayectoria del balón:
+    verde = completado, rojo punteado = interceptado/errado.
+    """
     fig, ax = dibujar_cancha()
-    completados = sum(1 for *_, ok in pases if ok); total = len(pases)
-    for x1, y1, x2, y2, ok in pases:
+    completados = sum(1 for p in pases if p["exito"]); total = len(pases)
+
+    for p in pases:
+        x1, y1 = p["origen"]
+        x2, y2 = p["destino"]
+        ok = p["exito"]
         color = PALETA["exito"] if ok else PALETA["fallo"]
         estilo = "-" if ok else "--"
+        # arc3 separa ligeramente las flechas de ida y vuelta entre los mismos puntos
         ax.annotate("", xy=(x2, y2), xytext=(x1, y1),
-                    arrowprops=dict(arrowstyle="-|>", color=color, lw=1.8,
-                                    alpha=0.9, shrinkA=2, shrinkB=2,
-                                    linestyle=estilo), zorder=3)
-        ax.scatter(x1, y1, s=20, c=color, zorder=4,
-                   edgecolor="#ffffff", linewidth=0.8)
-    _leyenda(ax, [(PALETA["exito"], "Completado", "o"),
-                  (PALETA["fallo"], "Fallido", "o")])
+                    arrowprops=dict(arrowstyle="-|>", color=color, lw=2.0,
+                                    alpha=0.9, shrinkA=4, shrinkB=4,
+                                    linestyle=estilo,
+                                    connectionstyle="arc3,rad=0.10"), zorder=3)
+        ax.scatter(x1, y1, s=45, c=color, zorder=4, edgecolor="#ffffff", linewidth=1.0)
+
+    _leyenda(ax, [(PALETA["exito"], "Pase completado", "o"),
+                  (PALETA["fallo"], "Pase interceptado o errado", "o")])
+
     pct = (completados / total * 100) if total else 0
-    sub = subtitulo or f"Precision: {completados}/{total} ({pct:.0f}%)"
+    sub = subtitulo or f"Efectividad: {completados}/{total} pases ({pct:.0f}%)"
     _titulo(ax, titulo, sub); _firma(ax)
     return fig, ax
 
@@ -343,8 +317,7 @@ def voronoi_control(aliados, rivales, titulo="Control de espacio", subtitulo=Non
     return fig, ax
 
 
-def posesion_zonas(aliado_xy, rival_xy, titulo="Posesion por zonas",
-                   subtitulo=None, cols=6, filas=4):
+def posesion_zonas(aliado_xy, rival_xy, titulo="Posesion por zonas", subtitulo=None, cols=6, filas=4):
     fig, ax = dibujar_cancha(con_grid=False)
     largo, ancho = CANCHA["largo"], CANCHA["ancho"]
     cw, ch = largo / cols, ancho / filas
@@ -376,57 +349,46 @@ def posesion_zonas(aliado_xy, rival_xy, titulo="Posesion por zonas",
     return fig, ax
 
 
-def red_pases(posiciones, conexiones, titulo="Red de pases", subtitulo=None):
+def red_pases(posiciones, conexiones, mapeo_robots, titulo="Análisis de Red de Pases", subtitulo=None):
     fig, ax = dibujar_cancha()
-    max_pases = max((c for *_, c in conexiones), default=1)
-    for o, d, cant in conexiones:
+    if not conexiones:
+        _titulo(ax, titulo, "Sin datos de conexiones"); _firma(ax)
+        return fig, ax
+
+    max_pases = max(conexiones.values(), default=1)
+
+    for (o, d, exito), cant in conexiones.items():
         if o not in posiciones or d not in posiciones: continue
         x1, y1 = posiciones[o]; x2, y2 = posiciones[d]
-        grosor = 1 + 6 * (cant / max_pases)
-        ax.plot([x1, x2], [y1, y2], color=PALETA["acento"],
-                linewidth=grosor, alpha=0.45, zorder=3, solid_capstyle="round")
-        ax.text((x1 + x2) / 2, (y1 + y2) / 2, str(cant), fontsize=7.5,
-                color=PALETA["acento"], family=FUENTE, ha="center",
-                va="center", zorder=5,
-                bbox=dict(boxstyle="round,pad=0.15", fc="#ffffff",
-                          ec=PALETA["grid"], lw=0.6))
+
+        grosor = 1.5 + 4.5 * (cant / max_pases)
+        color = PALETA["exito"] if exito else PALETA["fallo"]
+        estilo = "solid" if exito else "dashed"
+
+        # Dibujar línea de pase
+        ax.plot([x1, x2], [y1, y2], color=color, linewidth=grosor,
+                alpha=0.6, zorder=3, linestyle=estilo, solid_capstyle="round")
+
+        # Mostrar cantidad de pases en esa conexión
+        ax.text((x1 + x2) / 2, (y1 + y2) / 2, str(cant), fontsize=8.5,
+                color=color, family=FUENTE, ha="center", va="center", zorder=5,
+                fontweight="bold", bbox=dict(boxstyle="round,pad=0.15", fc="#ffffff", ec=color, lw=0.8))
+
     for rid, (x, y) in posiciones.items():
-        ax.scatter(x, y, s=620, c=PALETA["acento"], edgecolor="#ffffff",
+        nombre = mapeo_robots.get(rid, str(rid))
+        # El prefijo del mapeo ("A·R1" / "B·R1") define el equipo de forma robusta
+        es_equipo_a = nombre.startswith("A")
+        color_nodo = PALETA["aliado"] if es_equipo_a else PALETA["rival"]
+
+        ax.scatter(x, y, s=800, c=color_nodo, edgecolor="#ffffff",
                    linewidth=2.5, zorder=4)
-        ax.text(x, y, str(rid), ha="center", va="center", fontsize=11,
+        ax.text(x, y, nombre, ha="center", va="center", fontsize=9.5,
                 color="#ffffff", family=FUENTE, fontweight="bold", zorder=5)
-    _titulo(ax, titulo, subtitulo or "Grosor de linea = cantidad de pases")
+
+    _leyenda(ax, [(PALETA["exito"], "Conexión Exitosa", "-"),
+                  (PALETA["fallo"], "Pase Interceptado", "--")])
+    _titulo(ax, titulo, subtitulo)
     _firma(ax)
-    return fig, ax
-
-
-def dashboard(metricas, titulo="Resumen del partido"):
-    fig, ax = plt.subplots(figsize=(13, 7))
-    fig.patch.set_facecolor(PALETA["fondo"])
-    ax.set_facecolor(PALETA["fondo"])
-    ax.axis("off"); ax.set_xlim(0, 12); ax.set_ylim(0, 8)
-    ax.text(0.6, 7.4, titulo, ha="left", fontsize=20, fontweight="bold",
-            color=PALETA["texto"], family=FUENTE)
-    ax.text(0.6, 6.95, "Copa FutBotMX · Equipo AZTEM", ha="left", fontsize=10,
-            color=PALETA["acento"], family=FUENTE)
-    ax.plot([0.6, 11.4], [6.75, 6.75], color=PALETA["acento"], lw=2)
-    items = list(metricas.items())
-    cols = 3; cw, ch = 3.5, 2.1; x0, y0 = 0.6, 4.2
-    gap_x, gap_y = 0.35, 0.4
-    for idx, (clave, valor) in enumerate(items):
-        col = idx % cols; fila = idx // cols
-        x = x0 + col * (cw + gap_x); y = y0 - fila * (ch + gap_y)
-        ax.add_patch(patches.FancyBboxPatch((x, y), cw, ch,
-                     boxstyle="round,pad=0.06,rounding_size=0.12",
-                     facecolor=PALETA["cancha"], edgecolor=PALETA["grid"],
-                     linewidth=1.3))
-        ax.add_patch(patches.Rectangle((x, y + ch - 0.12), cw, 0.12,
-                     facecolor=PALETA["acento"], edgecolor="none"))
-        ax.text(x + cw / 2, y + ch * 0.58, str(valor), ha="center",
-                fontsize=27, fontweight="bold", color=PALETA["acento"],
-                family=FUENTE)
-        ax.text(x + cw / 2, y + ch * 0.20, clave, ha="center", fontsize=10.5,
-                color=PALETA["texto_tenue"], family=FUENTE)
     return fig, ax
 
 
@@ -435,37 +397,32 @@ def guardar(nombre, dpi=170):
     plt.close()
 
 
-# Mismo dpi que usa guardar() — se reutiliza para que los cuadros del
-# GIF salgan con la misma resolución/proporción que los PNG estáticos.
 DPI_EXPORTACION = 170
-
 
 # ================================================================
 # RUTAS DEL PROYECTO
 # ================================================================
-BASE_DIR      = os.path.dirname(os.path.abspath(__file__))   # .../src
-RAIZ_PROYECTO = os.path.dirname(BASE_DIR)                     # carpeta del proyecto
+BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
+RAIZ_PROYECTO = os.path.dirname(BASE_DIR)
 
 CARPETA_METRICAS         = os.path.join(RAIZ_PROYECTO, "results", "metrics")
 CARPETA_VISUALIZACIONES  = os.path.join(RAIZ_PROYECTO, "results", "visualizations")
 
 ARCHIVO_TRACKING   = os.path.join(CARPETA_METRICAS, "tracking_data.csv")
 ARCHIVO_EVENTOS    = os.path.join(CARPETA_METRICAS, "game_events.csv")
-CARPETA_RESULTADOS = CARPETA_VISUALIZACIONES  # nombre usado por _guardar()
+CARPETA_RESULTADOS = CARPETA_VISUALIZACIONES
 
 VENTANA_ESTELA = 10
-FPS            = 12
+FPS            = 15
 
 EQUIPO_A = "Equipo A"
 EQUIPO_B = "Equipo B"
 
-# Colores por equipo (mapeados a aliado/rival del template)
 COLOR_EQUIPO = {
     EQUIPO_A: PALETA["aliado"],
     EQUIPO_B: PALETA["rival"],
 }
 
-# El balón siempre se dibuja en negro, nunca con color de equipo
 COLOR_BALON = "black"
 
 EVENTO_TIRO    = "Tiro a Gol / Despeje"
@@ -473,58 +430,38 @@ EVENTO_CONTROL = "Control de Balon"
 
 
 # -------------------------------------------------------------
-# CARGA Y NORMALIZACIÓN — TRACKING
+# CARGA Y NORMALIZACIÓN
 # -------------------------------------------------------------
 def cargar_tracking(ruta: str) -> pd.DataFrame:
     df = pd.read_csv(ruta)
     df.columns = df.columns.str.strip().str.lower()
-
-    # Renombrar id_objeto → objeto_id para consistencia interna
     if "id_objeto" in df.columns and "objeto_id" not in df.columns:
         df.rename(columns={"id_objeto": "objeto_id"}, inplace=True)
-
-    # Normalizar equipo y tipo
     df["equipo"] = df["equipo"].astype(str).str.strip()
     df["tipo"]   = df["tipo"].astype(str).str.strip().str.lower()
 
-    # Crear columna tipo_ext: "robot_aliado" / "robot_rival" / "balon"
     def _clasificar(fila):
-        if fila["tipo"] == "balon":
-            return "balon"
-        if fila["equipo"] == EQUIPO_A:
-            return "robot_aliado"
-        if fila["equipo"] == EQUIPO_B:
-            return "robot_rival"
+        if fila["tipo"] == "balon": return "balon"
+        if fila["equipo"] == EQUIPO_A: return "robot_aliado"
+        if fila["equipo"] == EQUIPO_B: return "robot_rival"
         return "desconocido"
 
     df["tipo_ext"] = df.apply(_clasificar, axis=1)
-
     for col, default in [("frame", 0), ("tiempo", 0.0),
                          ("objeto_id", 0), ("intervencion_humana", "no")]:
-        if col not in df.columns:
-            df[col] = default
-
+        if col not in df.columns: df[col] = default
     df = df.dropna(subset=["x", "y"])
     return df
 
 
-# -------------------------------------------------------------
-# CARGA Y NORMALIZACIÓN — EVENTOS
-# -------------------------------------------------------------
 def cargar_eventos(ruta: str) -> pd.DataFrame:
     df = pd.read_csv(ruta)
     df.columns = df.columns.str.strip().str.lower()
-
-    # robot_implicado → robot_id
     if "robot_implicado" in df.columns and "robot_id" not in df.columns:
         df.rename(columns={"robot_implicado": "robot_id"}, inplace=True)
-
     for col, default in [("frame", 0), ("tiempo", 0.0),
-                         ("robot_id", -1), ("equipo", ""),
-                         ("detalles", "")]:
-        if col not in df.columns:
-            df[col] = default
-
+                         ("robot_id", -1), ("equipo", ""), ("detalles", "")]:
+        if col not in df.columns: df[col] = default
     df["robot_id"] = pd.to_numeric(df["robot_id"], errors="coerce").fillna(-1).astype(int)
     df["evento"]   = df["evento"].str.strip()
     df["equipo"]   = df["equipo"].str.strip()
@@ -535,35 +472,37 @@ def cargar_eventos(ruta: str) -> pd.DataFrame:
 # HELPERS
 # -------------------------------------------------------------
 def _split(df: pd.DataFrame):
-    """Divide tracking en (aliados_df, rivales_df) por tipo_ext."""
-    aliados = df[df["tipo_ext"] == "robot_aliado"]
-    rivales = df[df["tipo_ext"] == "robot_rival"]
-    return aliados, rivales
-
+    return df[df["tipo_ext"] == "robot_aliado"], df[df["tipo_ext"] == "robot_rival"]
 
 def _balon(df: pd.DataFrame) -> pd.DataFrame:
-    """Filas correspondientes al balón (tipo_ext == 'balon')."""
     return df[df["tipo_ext"] == "balon"]
 
-
 def _robots(df: pd.DataFrame) -> pd.DataFrame:
-    """Filas correspondientes solo a robots (excluye el balón)."""
     return df[df["tipo_ext"].isin(["robot_aliado", "robot_rival"])]
-
 
 def _xy(df: pd.DataFrame):
     return df["x"].to_numpy(), df["y"].to_numpy()
 
-
 def _posicion_robot_en_frame(tracking: pd.DataFrame, frame: int, robot_id: int):
-    """Devuelve (x, y) del robot robot_id en el frame más cercano disponible."""
     sub = tracking[tracking["objeto_id"] == robot_id]
-    if sub.empty:
-        return None
+    if sub.empty: return None
     idx = (sub["frame"] - frame).abs().argsort()
     row = sub.iloc[idx.iloc[0]]
     return float(row["x"]), float(row["y"])
 
+def _posicion_balon_en_frame(tracking: pd.DataFrame, frame: int):
+    """
+    Posición del BALÓN en (o lo más cerca de) un frame.
+
+    Es la MISMA fuente de datos que dibuja el GIF, así que cualquier evento que
+    ubiquemos con esta función cae exactamente donde se ve en el GIF/video, sin
+    depender de que el id de game_events.csv coincida con el id de tracking_data.csv.
+    """
+    sub = tracking[tracking["tipo_ext"] == "balon"]
+    if sub.empty: return None
+    idx = (sub["frame"] - frame).abs().argsort()
+    row = sub.iloc[idx.iloc[0]]
+    return float(row["x"]), float(row["y"])
 
 def _guardar(fig, nombre: str):
     os.makedirs(CARPETA_RESULTADOS, exist_ok=True)
@@ -571,450 +510,309 @@ def _guardar(fig, nombre: str):
     guardar(ruta, dpi=DPI_EXPORTACION)
     print(f"  [OK] {ruta}")
 
+def generar_mapeo_robots(tracking: pd.DataFrame):
+    """Genera un diccionario para identificar a los robots como 'A·R1', 'B·R2', etc."""
+    robots_df = _robots(tracking)
+    mapeo = {}
+    for eq, prefijo in [(EQUIPO_A, "A"), (EQUIPO_B, "B")]:
+        ids = sorted(robots_df[robots_df["equipo"] == eq]["objeto_id"].unique())
+        for i, rid in enumerate(ids, 1):
+            mapeo[int(rid)] = f"{prefijo}·R{i}"
+    return mapeo
+
+def mapeo_desde_eventos(eventos: pd.DataFrame):
+    """
+    Etiqueta de robot ('A·R1', 'B·R2', ...) a partir del equipo declarado en los
+    PROPIOS eventos. No depende del tracking, así que el id del evento nunca se
+    confunde con el id del tracking.
+    """
+    df = eventos[eventos["robot_id"] >= 0][["robot_id", "equipo"]].drop_duplicates()
+    mapeo = {}
+    for eq, prefijo in [(EQUIPO_A, "A"), (EQUIPO_B, "B")]:
+        ids = sorted(df[df["equipo"] == eq]["robot_id"].unique())
+        for i, rid in enumerate(ids, 1):
+            mapeo[int(rid)] = f"{prefijo}·R{i}"
+    return mapeo
+
+def posiciones_control_balon(tracking: pd.DataFrame, eventos: pd.DataFrame):
+    """
+    Por cada robot, la posición promedio del BALÓN en los frames donde ese robot
+    controló la pelota. Ancla los nodos de la Red de pases donde de verdad ocurrió
+    la acción (igual que el GIF) y, de nuevo, sin cruzar ids con el tracking.
+    """
+    controles = eventos[eventos["evento"] == EVENTO_CONTROL]
+    acumulado = {}
+    for _, ev in controles.iterrows():
+        rid = int(ev["robot_id"])
+        pos = _posicion_balon_en_frame(tracking, int(ev["frame"]))
+        if pos is None: continue
+        acumulado.setdefault(rid, []).append(pos)
+    return {rid: (float(np.mean([p[0] for p in pts])),
+                  float(np.mean([p[1] for p in pts])))
+            for rid, pts in acumulado.items() if pts}
+
+def extraer_pases(tracking: pd.DataFrame, eventos: pd.DataFrame):
+    """
+    Detecta pases a partir de los cambios de 'Control de Balon' (game_events.csv),
+    pero ubica cada pase con la posición del BALÓN en el tracking — la misma fuente
+    que el GIF. De esta forma el mapa coincide con el GIF/video y no importa si el
+    id del evento no empata con el id del tracking.
+    """
+    controles = eventos[eventos["evento"] == EVENTO_CONTROL].sort_values("frame").reset_index(drop=True)
+    tiros_frames = sorted(eventos[eventos["evento"] == EVENTO_TIRO]["frame"].tolist())
+    pases = []
+
+    for i in range(len(controles) - 1):
+        ev_o = controles.iloc[i]
+        ev_d = controles.iloc[i + 1]
+
+        rob_o = int(ev_o["robot_id"])
+        rob_d = int(ev_d["robot_id"])
+        if rob_o == rob_d:
+            continue  # el mismo robot sigue conduciendo: no es un pase
+
+        # Si hubo un tiro entre ambos controles, el cambio de posesión vino del
+        # disparo (rebote/despeje), no de un pase. No lo contamos como pase.
+        if any(ev_o["frame"] < tf < ev_d["frame"] for tf in tiros_frames):
+            continue
+
+        pos_o = _posicion_balon_en_frame(tracking, int(ev_o["frame"]))
+        pos_d = _posicion_balon_en_frame(tracking, int(ev_d["frame"]))
+        if pos_o is None or pos_d is None:
+            continue
+
+        eq_o = ev_o["equipo"].strip()
+        eq_d = ev_d["equipo"].strip()
+        exito = (eq_o == eq_d)  # mismo equipo = completado · distinto = interceptado
+
+        pases.append({
+            "origen": pos_o, "destino": pos_d,
+            "r_origen": rob_o, "r_destino": rob_d,
+            "eq_origen": eq_o, "eq_destino": eq_d,
+            "exito": exito
+        })
+    return pases
+
 
 # -------------------------------------------------------------
-# VISTA 1 — HEATMAP (uno solo, combinando todos los robots)
+# VISTAS
 # -------------------------------------------------------------
 def vista_heatmap(tracking: pd.DataFrame, _eventos):
-    """Genera UN SOLO heatmap con la actividad combinada de todos los
-    robots (Equipo A + Equipo B). El balón se excluye porque este mapa
-    es de presencia de robots, no de la pelota."""
     robots = _robots(tracking)
     if robots.empty:
         print("  [INFO] Sin datos de robots para el heatmap.")
         return
-
     n_a = robots[robots["tipo_ext"] == "robot_aliado"]["objeto_id"].nunique()
     n_b = robots[robots["tipo_ext"] == "robot_rival"]["objeto_id"].nunique()
 
+    # Le indicamos mostrar_cbar=False para que no altere las proporciones
     fig, _ = heatmap(
         *_xy(robots),
         titulo="Mapa de calor · Todos los robots",
-        subtitulo=f"Actividad global en cancha · Equipo A ({n_a}) vs Equipo B ({n_b})",
+        subtitulo=(f"Actividad global en cancha · Equipo A ({n_a}) vs Equipo B ({n_b})"),
+        mostrar_cbar=False
     )
     _guardar(fig, "01_heatmap.png")
 
 
-# -------------------------------------------------------------
-# VISTA 2 — TRAYECTORIAS (una sola gráfica con todos los robots)
-# -------------------------------------------------------------
 def vista_trayectoria(tracking: pd.DataFrame, _eventos):
-    """Genera UNA SOLA gráfica con las trayectorias de todos los robots
-    superpuestas sobre la cancha, coloreadas por equipo. El balón se
-    dibuja por separado como una pelota negra, nunca como un robot."""
-    if tracking.empty:
-        print("  [INFO] Sin datos de tracking para trayectorias.")
-        return
-
+    if tracking.empty: return
     fig, ax = dibujar_cancha()
+    robots_df = _robots(tracking)
+    mapeo = generar_mapeo_robots(tracking)
 
     robots_dibujados = 0
-    for obj_id, grupo in _robots(tracking).groupby("objeto_id"):
+    for obj_id, grupo in robots_df.groupby("objeto_id"):
         grupo = grupo.sort_values("frame")
-        if len(grupo) < 2:
-            continue
+        if len(grupo) < 2: continue
 
         equipo = grupo["equipo"].iloc[0]
         color  = COLOR_EQUIPO.get(equipo, PALETA["acento"])
-        x, y = grupo["x"].to_numpy(), grupo["y"].to_numpy()
+        x, y   = grupo["x"].to_numpy(), grupo["y"].to_numpy()
+        label  = mapeo.get(int(obj_id), str(int(obj_id)))
 
         ax.plot(x, y, color=color, linewidth=2, alpha=0.8, zorder=4)
-        ax.scatter(x[0], y[0], color=color, edgecolors="white",
-                   linewidths=1.5, s=90, marker="o", zorder=5)
-        ax.scatter(x[-1], y[-1], color=color, edgecolors="white",
-                   linewidths=1.5, s=140, marker="X", zorder=5)
-        ax.annotate(str(int(obj_id)), (x[-1], y[-1]),
-                    textcoords="offset points", xytext=(6, 6),
-                    color=color, fontsize=9, fontweight="bold",
-                    family=FUENTE, zorder=6)
+        ax.scatter(x[0], y[0], color=color, edgecolors="white", linewidths=1.5, s=90, marker="o", zorder=5)
+        ax.scatter(x[-1], y[-1], color=color, edgecolors="white", linewidths=1.5, s=140, marker="X", zorder=5)
+        ax.annotate(label, (x[-1], y[-1]), textcoords="offset points", xytext=(6, 6),
+                    color=color, fontsize=9, fontweight="bold", family=FUENTE, zorder=6)
         robots_dibujados += 1
 
-    # Trayectoria del balón: línea punteada negra, sin ID ni marca de robot
     balon = _balon(tracking).sort_values("frame")
     if not balon.empty:
         bx, by = balon["x"].to_numpy(), balon["y"].to_numpy()
-        ax.plot(bx, by, color=COLOR_BALON, linewidth=1.5, alpha=0.55,
-                linestyle=":", zorder=3)
-        ax.scatter(bx[-1], by[-1], color=COLOR_BALON, edgecolors="white",
-                   linewidths=1.2, s=100, marker="o", zorder=6)
+        ax.plot(bx, by, color=COLOR_BALON, linewidth=1.5, alpha=0.55, linestyle=":", zorder=3)
+        ax.scatter(bx[-1], by[-1], color=COLOR_BALON, edgecolors="white", linewidths=1.2, s=100, marker="o", zorder=6)
 
-    n_a = tracking[tracking["tipo_ext"] == "robot_aliado"]["objeto_id"].nunique()
-    n_b = tracking[tracking["tipo_ext"] == "robot_rival"]["objeto_id"].nunique()
-
-    _titulo(ax, "Trayectorias de todos los robots",
-           f"Equipo A: {n_a} robots  ·  Equipo B: {n_b} robots  ·  "
-           f"{robots_dibujados} trayectorias graficadas "
-           f"(○ inicio, ✕ final)")
+    _titulo(ax, "Trayectorias de los robots", f"{robots_dibujados} trayectorias graficadas")
     _firma(ax)
-    leyenda = [
-        (PALETA["aliado"], "Equipo A", "o"),
-        (PALETA["rival"],  "Equipo B", "o"),
+
+    # Leyenda muy simplificada para el usuario final
+    handles = [
+        plt.Line2D([0], [0], marker="o", color="none", markerfacecolor=PALETA["aliado"], markeredgecolor="white", label="Equipo A"),
+        plt.Line2D([0], [0], marker="o", color="none", markerfacecolor=PALETA["rival"], markeredgecolor="white", label="Equipo B"),
+        plt.Line2D([0], [0], marker="o", color="none", markerfacecolor="#888888", markeredgecolor="white", label="Inicio"),
+        plt.Line2D([0], [0], marker="X", color="none", markerfacecolor="#888888", markeredgecolor="none", label="Fin"),
     ]
     if not balon.empty:
-        leyenda.append((COLOR_BALON, "Balón", "o"))
-    _leyenda(ax, leyenda, loc="upper right")
+        handles.append(plt.Line2D([0], [0], marker="o", color="none", markerfacecolor=COLOR_BALON, markeredgecolor="white", label="Balón"))
 
+    leg = ax.legend(handles=handles, loc="upper right", frameon=True, fontsize=9, labelcolor=PALETA["texto"])
+    leg.get_frame().set_edgecolor(PALETA["grid"])
+    leg.get_frame().set_alpha(0.95)
     _guardar(fig, "02_trayectorias.png")
 
 
-# -------------------------------------------------------------
-# VISTA 3 — MAPA DE PASES  (desde game_events.csv)
-# -------------------------------------------------------------
 def vista_pases(tracking: pd.DataFrame, eventos: pd.DataFrame):
-    """
-    Detecta transferencias de control entre robots distintos.
-    Usa la posición del robot implicado en tracking como origen/destino.
-    """
-    controles = eventos[eventos["evento"] == EVENTO_CONTROL] \
-                       .sort_values("frame").reset_index(drop=True)
-
-    if len(controles) < 2:
-        print("  [INFO] Sin suficientes eventos de control para mapa de pases.")
-        return
-
-    pases = []
-    for i in range(len(controles) - 1):
-        fo = controles.iloc[i]
-        fd = controles.iloc[i + 1]
-        if fo["robot_id"] == fd["robot_id"]:
-            continue  # mismo robot, no es pase
-
-        pos_o = _posicion_robot_en_frame(tracking, fo["frame"], fo["robot_id"])
-        pos_d = _posicion_robot_en_frame(tracking, fd["frame"], fd["robot_id"])
-        if pos_o is None or pos_d is None:
-            continue
-
-        mismo_equipo = (fo["equipo"].strip() == fd["equipo"].strip())
-        pases.append((*pos_o, *pos_d, mismo_equipo))
-
+    pases = extraer_pases(tracking, eventos)
     if not pases:
-        print("  [INFO] No se construyeron pases entre robots distintos.")
+        print("  [INFO] No se detectaron pases entre robots.")
         return
-
-    fig, _ = mapa_pases(
-        pases,
-        titulo="Mapa de pases · Datos reales",
-        subtitulo=f"{len(pases)} transferencias de control detectadas",
-    )
+    comp = sum(1 for p in pases if p["exito"])
+    print(f"  [INFO] {len(pases)} pases ({comp} completados, {len(pases)-comp} perdidos) "
+          f"ubicados sobre la trayectoria del balón (misma fuente que el GIF).")
+    fig, _ = mapa_pases(pases, titulo="Dirección y Éxito de Pases",
+                        subtitulo=f"{len(pases)} pases · {comp} completados")
     _guardar(fig, "03_pases.png")
 
 
-# -------------------------------------------------------------
-# VISTA 4 — MAPA DE TIROS  (desde game_events.csv)
-# -------------------------------------------------------------
 def vista_tiros(tracking: pd.DataFrame, eventos: pd.DataFrame):
-    """
-    Filtra eventos 'Tiro a Gol / Despeje' y cruza con tracking
-    para obtener la posición real del robot disparador.
-    """
     tiros_ev = eventos[eventos["evento"] == EVENTO_TIRO].copy()
-
-    if tiros_ev.empty:
-        print("  [INFO] Sin eventos de tiro en game_events.csv.")
-        return
-
+    if tiros_ev.empty: return
     tiros = []
     for _, fila in tiros_ev.iterrows():
-        rid = int(fila["robot_id"])
-        pos = _posicion_robot_en_frame(tracking, int(fila["frame"]), rid)
-        if pos is None:
-            continue
-
+        pos = _posicion_balon_en_frame(tracking, int(fila["frame"]))
+        if pos is None: continue
         detalles = str(fila.get("detalles", "")).lower()
-        if "gol" in detalles:
-            resultado = "gol"
-        elif "ataj" in detalles or "salv" in detalles or "block" in detalles:
-            resultado = "atajado"
-        else:
-            resultado = "fuera"
-
+        if "gol" in detalles: resultado = "gol"
+        elif "ataj" in detalles or "salv" in detalles or "block" in detalles: resultado = "atajado"
+        else: resultado = "fuera"
         tiros.append((*pos, resultado))
-
-    if not tiros:
-        print("  [INFO] No se cruzaron tiros con posiciones de tracking.")
-        return
-
+    if not tiros: return
     goles = sum(1 for *_, r in tiros if r == "gol")
-    fig, _ = mapa_tiros(
-        tiros,
-        titulo="Mapa de tiros · Datos reales",
-        subtitulo=f"Disparos: {len(tiros)}  ·  Goles detectados: {goles}",
-    )
+    fig, _ = mapa_tiros(tiros, titulo="Mapa de tiros", subtitulo=f"Disparos: {len(tiros)}  ·  Goles detectados: {goles}")
     _guardar(fig, "04_tiros.png")
 
 
-# -------------------------------------------------------------
-# VISTA 5 — VORONOI
-# -------------------------------------------------------------
 def vista_voronoi(tracking: pd.DataFrame, _eventos):
     aliados, rivales = _split(tracking)
-
-    pos_aliados = [(g["x"].mean(), g["y"].mean())
-                   for _, g in aliados.groupby("objeto_id")]
-    pos_rivales = [(g["x"].mean(), g["y"].mean())
-                   for _, g in rivales.groupby("objeto_id")]
-
-    if not pos_aliados and not pos_rivales:
-        print("  [INFO] Sin posiciones para Voronoi.")
-        return
-
-    fig, _ = voronoi_control(
-        pos_aliados, pos_rivales,
-        titulo="Control de espacio · Voronoi",
-        subtitulo="Posición promedio por robot · Equipo A vs Equipo B",
-    )
+    pos_aliados = [(g["x"].mean(), g["y"].mean()) for _, g in aliados.groupby("objeto_id")]
+    pos_rivales = [(g["x"].mean(), g["y"].mean()) for _, g in rivales.groupby("objeto_id")]
+    if not pos_aliados and not pos_rivales: return
+    fig, _ = voronoi_control(pos_aliados, pos_rivales, titulo="Control de espacio · Voronoi")
     _guardar(fig, "05_voronoi.png")
 
 
-# -------------------------------------------------------------
-# VISTA 6 — POSESIÓN POR ZONAS  (desde game_events.csv)
-# -------------------------------------------------------------
 def vista_posesion(tracking: pd.DataFrame, eventos: pd.DataFrame):
-    """
-    Usa eventos 'Control de Balon' para determinar posesión y
-    la posición del robot implicado como punto de posesión.
-    """
     controles = eventos[eventos["evento"] == EVENTO_CONTROL].sort_values("frame")
-
     aliado_xy, rival_xy = [], []
     for _, fila in controles.iterrows():
-        pos = _posicion_robot_en_frame(tracking, int(fila["frame"]),
-                                       int(fila["robot_id"]))
-        if pos is None:
-            continue
-        if fila["equipo"].strip() == EQUIPO_A:
-            aliado_xy.append(pos)
-        else:
-            rival_xy.append(pos)
+        pos = _posicion_balon_en_frame(tracking, int(fila["frame"]))
+        if pos is None: continue
+        if fila["equipo"].strip() == EQUIPO_A: aliado_xy.append(pos)
+        else: rival_xy.append(pos)
 
     if not aliado_xy and not rival_xy:
-        # Fallback: presencia de robots en cada zona
         aliados, rivales = _split(tracking)
         aliado_xy = list(zip(*_xy(aliados))) if not aliados.empty else []
         rival_xy  = list(zip(*_xy(rivales))) if not rivales.empty else []
         subtitulo = "Posesión por presencia de robots en zona"
     else:
-        total     = len(aliado_xy) + len(rival_xy)
-        pct       = len(aliado_xy) / total * 100 if total else 0
-        subtitulo = (f"Eventos reales · "
-                     f"Equipo A {pct:.0f}%  ·  Equipo B {100-pct:.0f}%")
+        total = len(aliado_xy) + len(rival_xy)
+        pct = len(aliado_xy) / total * 100 if total else 0
+        subtitulo = f"Equipo A {pct:.0f}%  ·  Equipo B {100-pct:.0f}%"
 
-    fig, _ = posesion_zonas(aliado_xy, rival_xy,
-                            titulo="Posesión por zonas",
-                            subtitulo=subtitulo)
+    fig, _ = posesion_zonas(aliado_xy, rival_xy, titulo="Posesión por zonas", subtitulo=subtitulo)
     _guardar(fig, "06_posesion.png")
 
 
-# -------------------------------------------------------------
-# VISTA 7 — RED DE PASES  (desde game_events.csv)
-# -------------------------------------------------------------
 def vista_red_pases(tracking: pd.DataFrame, eventos: pd.DataFrame):
-    """
-    Cuenta transferencias de control entre robots distintos.
-    Los nodos usan la posición promedio de cada robot en tracking.
-    """
-    controles = eventos[eventos["evento"] == EVENTO_CONTROL] \
-                       .sort_values("frame").reset_index(drop=True)
+    pases = extraer_pases(tracking, eventos)
+    if not pases: return
 
-    if len(controles) < 2:
-        print("  [INFO] Sin suficientes eventos para red de pases.")
-        return
+    # Etiquetas y posiciones derivadas SOLO de eventos + balón (igual que el mapa y el GIF)
+    mapeo = mapeo_desde_eventos(eventos)
+    posiciones = posiciones_control_balon(tracking, eventos)
 
-    # Posiciones promedio de todos los robots
-    posiciones = {}
-    for rid, grupo in tracking.groupby("objeto_id"):
-        posiciones[int(rid)] = (grupo["x"].mean(), grupo["y"].mean())
+    # Agrupar las conexiones y contar cantidad
+    conexiones = {}
+    for p in pases:
+        clave = (p["r_origen"], p["r_destino"], p["exito"])
+        conexiones[clave] = conexiones.get(clave, 0) + 1
 
-    conexiones: dict[tuple, int] = {}
-    for i in range(len(controles) - 1):
-        o = int(controles.iloc[i]["robot_id"])
-        d = int(controles.iloc[i + 1]["robot_id"])
-        if o != d and o in posiciones and d in posiciones:
-            clave = (o, d)
-            conexiones[clave] = conexiones.get(clave, 0) + 1
-
-    if not conexiones:
-        print("  [INFO] No se detectaron pases entre robots distintos.")
-        return
-
-    lista_con = [(o, d, c) for (o, d), c in conexiones.items()]
-    total_pases = sum(c for *_, c in lista_con)
     fig, _ = red_pases(
-        posiciones, lista_con,
-        titulo="Red de pases · Eventos reales",
-        subtitulo=f"{total_pases} transferencias de control detectadas",
+        posiciones, conexiones, mapeo,
+        titulo="Red de pases de todo el partido",
+        subtitulo="Posición = dónde cada robot tocó el balón · Grosor = nº de pases"
     )
     _guardar(fig, "07_red_pases.png")
 
 
-# -------------------------------------------------------------
-# VISTA 8 — DASHBOARD
-# -------------------------------------------------------------
-def vista_dashboard(tracking: pd.DataFrame, eventos: pd.DataFrame):
-    aliados, rivales = _split(tracking)
-
-    n_aliados  = aliados["objeto_id"].nunique()
-    n_rivales  = rivales["objeto_id"].nunique()
-    n_frames   = tracking["frame"].nunique()
-    n_tiros    = int((eventos["evento"] == EVENTO_TIRO).sum())
-    n_controles = int((eventos["evento"] == EVENTO_CONTROL).sum())
-    intervenciones = int(
-        (tracking["intervencion_humana"].astype(str).str.lower() == "si").sum()
-    )
-
-    # Distancia total recorrida por cada equipo
-    def dist_total(df):
-        total = 0.0
-        for _, g in df.groupby("objeto_id"):
-            g = g.sort_values("frame")
-            total += np.hypot(g["x"].diff(), g["y"].diff()).sum()
-        return total
-
-    dist_a = dist_total(aliados)
-    dist_b = dist_total(rivales)
-
-    # Posesión desde eventos
-    ctrl = eventos[eventos["evento"] == EVENTO_CONTROL]
-    pct_a = 0
-    if len(ctrl):
-        pct_a = round((ctrl["equipo"].str.strip() == EQUIPO_A).sum() / len(ctrl) * 100)
-
-    metricas = {
-        "Robots Eq. A":       n_aliados,
-        "Robots Eq. B":       n_rivales,
-        "Frames analizados":  n_frames,
-        "Dist. A (cm)":       f"{dist_a:.0f}",
-        "Dist. B (cm)":       f"{dist_b:.0f}",
-        "Tiros a gol":        n_tiros,
-        "Controles balón":    n_controles,
-        f"Posesión A":        f"{pct_a}%",
-        "Intervenciones":     intervenciones,
-    }
-    fig, _ = dashboard(metricas, titulo="Resumen del partido · AZTEM")
-    _guardar(fig, "08_dashboard.png")
-
-
-# -------------------------------------------------------------
-# VISTA 9 — GIF  (robots diferenciados por equipo + eventos)
-# -------------------------------------------------------------
 def vista_gif(tracking: pd.DataFrame, eventos: pd.DataFrame):
-    """
-    Genera el GIF de rastreo. Cada cuadro se recorta con
-    bbox_inches="tight" (igual que guardar()) para que el GIF tenga
-    EXACTAMENTE las mismas proporciones que el resto de las vistas;
-    matplotlib.animation no soporta ese recorte por cuadro, así que
-    en vez de FuncAnimation se renderiza manualmente cuadro por
-    cuadro y se compone con Pillow.
-    """
     eventos_por_frame = eventos.groupby("frame").apply(
         lambda g: g[["evento", "robot_id", "equipo"]].to_dict("records")
     ).to_dict()
-
     frames_unicos = sorted(tracking["frame"].unique())
     fig, ax = dibujar_cancha()
 
     def dibujar_frame(num_frame):
         ax.clear()
         dibujar_cancha(ax=ax)
-
         datos_frame = tracking[tracking["frame"] == num_frame]
         t_val = datos_frame["tiempo"]
         t_txt = f"t = {t_val.iloc[0]:.2f} s" if len(t_val) else ""
-
         evs_frame = eventos_por_frame.get(num_frame, [])
-        ev_txt = ""
-        if evs_frame:
-            ev = evs_frame[0]
-            ev_txt = f"  ⚡ {ev['evento']} — Robot {ev['robot_id']}"
+        ev_txt = f"  ⚡ {evs_frame[0]['evento']} — Robot {evs_frame[0]['robot_id']}" if evs_frame else ""
 
-        _titulo(ax, "Rastreo de robots",
-               f"Frame {num_frame}  ·  {t_txt}{ev_txt}")
+        _titulo(ax, "Rastreo de robots", f"Frame {num_frame}  ·  {t_txt}{ev_txt}")
         _firma(ax)
 
         for _, entidad in datos_frame.iterrows():
-            r_id     = int(entidad["objeto_id"])
+            r_id = int(entidad["objeto_id"])
             tipo_ext = entidad["tipo_ext"]
-            bx, by   = entidad["x"], entidad["y"]
+            bx, by = entidad["x"], entidad["y"]
 
             if tipo_ext == "balon":
-                # El balón se dibuja como una pelota negra, nunca como robot
-                historial_b = tracking[
-                    (tracking["tipo_ext"] == "balon") &
-                    (tracking["frame"] <= num_frame) &
-                    (tracking["frame"] >  num_frame - VENTANA_ESTELA)
-                ].sort_values("frame")
+                historial_b = tracking[(tracking["tipo_ext"] == "balon") &
+                                       (tracking["frame"] <= num_frame) &
+                                       (tracking["frame"] > num_frame - VENTANA_ESTELA)].sort_values("frame")
                 if len(historial_b) > 1:
-                    ax.plot(historial_b["x"], historial_b["y"],
-                            color=COLOR_BALON, alpha=0.35, linewidth=1.5,
-                            linestyle=":", zorder=4)
-                ax.scatter(bx, by, color=COLOR_BALON, s=140,
-                           edgecolors="white", linewidths=1.5, zorder=6)
+                    ax.plot(historial_b["x"], historial_b["y"], color=COLOR_BALON, alpha=0.35, linewidth=1.5, linestyle=":", zorder=4)
+                ax.scatter(bx, by, color=COLOR_BALON, s=140, edgecolors="white", linewidths=1.5, zorder=6)
                 continue
 
             equipo = entidad["equipo"]
-            color  = COLOR_EQUIPO.get(equipo, PALETA["acento"])
+            color = COLOR_EQUIPO.get(equipo, PALETA["acento"])
 
-            # Estela
-            historial = tracking[
-                (tracking["objeto_id"] == r_id) &
-                (tracking["tipo_ext"] != "balon") &
-                (tracking["frame"] <= num_frame) &
-                (tracking["frame"] >  num_frame - VENTANA_ESTELA)
-            ].sort_values("frame")
+            historial = tracking[(tracking["objeto_id"] == r_id) & (tracking["tipo_ext"] != "balon") &
+                                 (tracking["frame"] <= num_frame) & (tracking["frame"] > num_frame - VENTANA_ESTELA)].sort_values("frame")
             if len(historial) > 1:
-                ax.plot(historial["x"], historial["y"],
-                        color=color, alpha=0.30, linewidth=2,
-                        linestyle="--", zorder=4)
+                ax.plot(historial["x"], historial["y"], color=color, alpha=0.30, linewidth=2, linestyle="--", zorder=4)
 
-            # Robot
-            ax.scatter(bx, by, color=color, s=360,
-                       edgecolors="white", linewidths=2, zorder=5)
-            ax.text(bx, by, str(r_id), color="white",
-                    ha="center", va="center", fontweight="bold",
-                    fontsize=10, zorder=6, family=FUENTE)
+            ax.scatter(bx, by, color=color, s=360, edgecolors="white", linewidths=2, zorder=5)
+            ax.text(bx, by, str(r_id), color="white", ha="center", va="center", fontweight="bold", fontsize=10, zorder=6, family=FUENTE)
 
-            # Resaltar robot implicado en evento
             for ev in evs_frame:
                 if ev["robot_id"] == r_id:
-                    ax.scatter(bx, by, s=800,
-                               edgecolors=PALETA["aviso"],
-                               facecolors="none", linewidths=3, zorder=7)
-                    ax.text(bx, by + 7, ev["evento"][:14],
-                            color=PALETA["aviso"], ha="center",
-                            va="bottom", fontsize=7, fontweight="bold",
-                            zorder=8, family=FUENTE)
+                    ax.scatter(bx, by, s=800, edgecolors=PALETA["aviso"], facecolors="none", linewidths=3, zorder=7)
+                    ax.text(bx, by + 7, ev["evento"][:14], color=PALETA["aviso"], ha="center", va="bottom", fontsize=7, fontweight="bold", zorder=8, family=FUENTE)
 
-            # Intervención humana
             if str(entidad.get("intervencion_humana", "")).lower() == "si":
-                ax.scatter(bx, by, s=720,
-                           edgecolors=PALETA["aviso"],
-                           facecolors="none", linewidths=3, zorder=4)
-                ax.text(bx, by + 6, "MANO", color=PALETA["aviso"],
-                        ha="center", va="bottom", fontsize=8,
-                        fontweight="bold", zorder=6, family=FUENTE)
+                ax.scatter(bx, by, s=720, edgecolors=PALETA["aviso"], facecolors="none", linewidths=3, zorder=4)
+                ax.text(bx, by + 6, "MANO", color=PALETA["aviso"], ha="center", va="bottom", fontsize=8, fontweight="bold", zorder=6, family=FUENTE)
 
-        _leyenda(ax, [
-            (PALETA["aliado"], "Equipo A", "o"),
-            (PALETA["rival"],  "Equipo B", "o"),
-            (COLOR_BALON,      "Balón",    "o"),
-        ], loc="upper right")
+        _leyenda(ax, [(PALETA["aliado"], "Equipo A", "o"), (PALETA["rival"],  "Equipo B", "o"), (COLOR_BALON, "Balón", "o")], loc="upper right")
 
     print(f"  [INFO] Renderizando {len(frames_unicos)} frames para el GIF...")
-
     cuadros_png = []
     for num_frame in frames_unicos:
         dibujar_frame(num_frame)
         buf = io.BytesIO()
-        # Mismo recorte y mismo dpi que usan los PNG estáticos
-        fig.savefig(buf, format="png", dpi=DPI_EXPORTACION,
-                    bbox_inches="tight", facecolor=PALETA["fondo"])
+        fig.savefig(buf, format="png", dpi=DPI_EXPORTACION, bbox_inches="tight", facecolor=PALETA["fondo"])
         buf.seek(0)
         cuadros_png.append(Image.open(buf).convert("RGB"))
     plt.close(fig)
 
-    # El recorte "tight" puede variar uno o dos píxeles entre cuadros
-    # (por ejemplo el texto "Frame 9" vs "Frame 10"); unificamos el
-    # tamaño de lienzo para que el GIF no "salte" al reproducirse.
     ancho_max = max(im.width for im in cuadros_png)
     alto_max  = max(im.height for im in cuadros_png)
     cuadros = []
@@ -1027,48 +825,23 @@ def vista_gif(tracking: pd.DataFrame, eventos: pd.DataFrame):
 
     os.makedirs(CARPETA_RESULTADOS, exist_ok=True)
     ruta_gif = os.path.join(CARPETA_RESULTADOS, "tracking_visualization.gif")
-    cuadros[0].save(ruta_gif, save_all=True, append_images=cuadros[1:],
-                    duration=int(1000 / FPS), loop=0)
+    cuadros[0].save(ruta_gif, save_all=True, append_images=cuadros[1:], duration=int(1000 / FPS), loop=0)
     print(f"  [ÉXITO] GIF guardado en: {ruta_gif}")
 
 
-# -------------------------------------------------------------
-# PIPELINE PRINCIPAL
-# -------------------------------------------------------------
 def main():
     print("=" * 64)
     print("=== Copa FutBotMX · AZTEM — Generador unificado de vistas ===")
     print("=" * 64)
-    print(f"[INFO] Carpeta de métricas:       {CARPETA_METRICAS}")
-    print(f"[INFO] Carpeta de visualizaciones: {CARPETA_VISUALIZACIONES}\n")
 
     if not os.path.exists(ARCHIVO_TRACKING):
         print(f"[ERROR] No se encontró: {ARCHIVO_TRACKING}")
         return
     tracking = cargar_tracking(ARCHIVO_TRACKING)
     if tracking.empty:
-        print("[ERROR] tracking_data.csv está vacío o sin datos válidos.")
         return
 
-    aliados = tracking[tracking["tipo_ext"] == "robot_aliado"]
-    rivales = tracking[tracking["tipo_ext"] == "robot_rival"]
-    n_robots_total = _robots(tracking)["objeto_id"].nunique()
-    tiene_balon = not _balon(tracking).empty
-    print(f"[INFO] Tracking: {len(tracking)} registros · "
-          f"{tracking['frame'].nunique()} frames · "
-          f"{n_robots_total} robots"
-          f"{'  ·  balón detectado' if tiene_balon else '  ·  sin balón en tracking'}")
-    print(f"       Equipo A: {aliados['objeto_id'].nunique()} robots  |  "
-          f"Equipo B: {rivales['objeto_id'].nunique()} robots")
-
-    if os.path.exists(ARCHIVO_EVENTOS):
-        eventos = cargar_eventos(ARCHIVO_EVENTOS)
-        print(f"[INFO] Eventos: {len(eventos)} registros · "
-              f"{eventos['evento'].nunique()} tipos\n")
-    else:
-        print(f"[WARN] No se encontró {ARCHIVO_EVENTOS}\n")
-        eventos = pd.DataFrame(columns=["frame", "tiempo", "evento",
-                                        "robot_id", "equipo", "detalles"])
+    eventos = cargar_eventos(ARCHIVO_EVENTOS) if os.path.exists(ARCHIVO_EVENTOS) else pd.DataFrame(columns=["frame", "tiempo", "evento", "robot_id", "equipo", "detalles"])
 
     pasos = [
         ("Heatmap",            vista_heatmap),
@@ -1077,8 +850,7 @@ def main():
         ("Mapa de tiros",      vista_tiros),
         ("Voronoi",            vista_voronoi),
         ("Posesión por zonas", vista_posesion),
-        ("Red de pases",       vista_red_pases),
-        ("Dashboard",          vista_dashboard),
+        ("Total de pases",     vista_red_pases),
         ("GIF de animación",   vista_gif),
     ]
 
@@ -1087,14 +859,11 @@ def main():
         try:
             func(tracking, eventos)
         except Exception as e:
-            import traceback
             print(f"  [WARN] {nombre} falló: {e}")
-            traceback.print_exc()
 
     print("\n" + "=" * 64)
     print(f"[LISTO] Todas las vistas guardadas en '{CARPETA_VISUALIZACIONES}'")
     print("=" * 64)
-
 
 if __name__ == "__main__":
     main()
