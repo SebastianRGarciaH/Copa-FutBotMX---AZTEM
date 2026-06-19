@@ -1,9 +1,11 @@
 import os
 import io
+import gc
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.colors as mcolors
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.collections import LineCollection
 import matplotlib.font_manager as fm
@@ -119,7 +121,6 @@ def dibujar_cancha(ax=None, figsize=(13, 9), con_grid=True, con_ejes=True):
 
 
 def _leyenda(ax, items, loc="upper right"):
-    # Si detectamos una línea (para la red de pases), ajustamos el handle
     handles = []
     for c, lbl, mk in items:
         if mk in ["-", "--"]:
@@ -137,19 +138,32 @@ def _leyenda(ax, items, loc="upper right"):
 
 def heatmap(xs, ys, titulo="Mapa de calor", subtitulo=None, bins=40, mostrar_cbar=True):
     fig, ax = dibujar_cancha(con_grid=False)
-    heat, _, _ = np.histogram2d(xs, ys, bins=bins,
+    
+    # 1. FILTRO DE BASURA: Ignoramos las coordenadas exactas (0.0, 0.0)
+    xs, ys = np.asarray(xs), np.asarray(ys)
+    validos = (xs != 0.0) | (ys != 0.0)
+    xs_val = xs[validos]
+    ys_val = ys[validos]
+
+    heat, _, _ = np.histogram2d(xs_val, ys_val, bins=bins,
         range=[[0, CANCHA["largo"]], [0, CANCHA["ancho"]]])
+        
     if SCIPY_OK:
-        heat = gaussian_filter(heat, sigma=1.4)
+        heat = gaussian_filter(heat, sigma=1.6) 
+        
     cmap = LinearSegmentedColormap.from_list("calor", [
         (0.00, (1, 1, 1, 0)), (0.20, (0.30, 0.55, 0.85, 0.45)),
         (0.50, (0.45, 0.35, 0.75, 0.70)), (0.78, (0.90, 0.45, 0.30, 0.85)),
         (1.00, (0.80, 0.10, 0.15, 0.95))])
 
-    # IMPORTANTE: aspect="equal" para que no deforme el mapa respecto a las otras vistas
+    # 2. NORMALIZACIÓN NO LINEAL
+    max_val = heat.max() if heat.max() > 0 else 1.0
+    norm = mcolors.PowerNorm(gamma=0.45, vmin=0, vmax=max_val)
+
+    # IMPORTANTE: aspect="equal"
     im = ax.imshow(heat.T, extent=[0, CANCHA["largo"], 0, CANCHA["ancho"]],
                    origin="lower", cmap=cmap, interpolation="bilinear",
-                   zorder=1, aspect="equal")
+                   zorder=1, aspect="equal", norm=norm)
 
     if mostrar_cbar:
         cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
@@ -184,10 +198,6 @@ def trayectoria(xs, ys, titulo="Trayectoria", subtitulo=None, color=None):
 
 
 def mapa_pases(pases, titulo="Mapa de pases", subtitulo=None):
-    """
-    Dibuja cada pase como una flecha sobre la trayectoria del balón:
-    verde = completado, rojo punteado = interceptado/errado.
-    """
     fig, ax = dibujar_cancha()
     completados = sum(1 for p in pases if p["exito"]); total = len(pases)
 
@@ -197,7 +207,6 @@ def mapa_pases(pases, titulo="Mapa de pases", subtitulo=None):
         ok = p["exito"]
         color = PALETA["exito"] if ok else PALETA["fallo"]
         estilo = "-" if ok else "--"
-        # arc3 separa ligeramente las flechas de ida y vuelta entre los mismos puntos
         ax.annotate("", xy=(x2, y2), xytext=(x1, y1),
                     arrowprops=dict(arrowstyle="-|>", color=color, lw=2.0,
                                     alpha=0.9, shrinkA=4, shrinkB=4,
@@ -365,18 +374,15 @@ def red_pases(posiciones, conexiones, mapeo_robots, titulo="Análisis de Red de 
         color = PALETA["exito"] if exito else PALETA["fallo"]
         estilo = "solid" if exito else "dashed"
 
-        # Dibujar línea de pase
         ax.plot([x1, x2], [y1, y2], color=color, linewidth=grosor,
                 alpha=0.6, zorder=3, linestyle=estilo, solid_capstyle="round")
 
-        # Mostrar cantidad de pases en esa conexión
         ax.text((x1 + x2) / 2, (y1 + y2) / 2, str(cant), fontsize=8.5,
                 color=color, family=FUENTE, ha="center", va="center", zorder=5,
                 fontweight="bold", bbox=dict(boxstyle="round,pad=0.15", fc="#ffffff", ec=color, lw=0.8))
 
     for rid, (x, y) in posiciones.items():
         nombre = mapeo_robots.get(rid, str(rid))
-        # El prefijo del mapeo ("A·R1" / "B·R1") define el equipo de forma robusta
         es_equipo_a = nombre.startswith("A")
         color_nodo = PALETA["aliado"] if es_equipo_a else PALETA["rival"]
 
@@ -491,13 +497,6 @@ def _posicion_robot_en_frame(tracking: pd.DataFrame, frame: int, robot_id: int):
     return float(row["x"]), float(row["y"])
 
 def _posicion_balon_en_frame(tracking: pd.DataFrame, frame: int):
-    """
-    Posición del BALÓN en (o lo más cerca de) un frame.
-
-    Es la MISMA fuente de datos que dibuja el GIF, así que cualquier evento que
-    ubiquemos con esta función cae exactamente donde se ve en el GIF/video, sin
-    depender de que el id de game_events.csv coincida con el id de tracking_data.csv.
-    """
     sub = tracking[tracking["tipo_ext"] == "balon"]
     if sub.empty: return None
     idx = (sub["frame"] - frame).abs().argsort()
@@ -511,7 +510,6 @@ def _guardar(fig, nombre: str):
     print(f"  [OK] {ruta}")
 
 def generar_mapeo_robots(tracking: pd.DataFrame):
-    """Genera un diccionario para identificar a los robots como 'A·R1', 'B·R2', etc."""
     robots_df = _robots(tracking)
     mapeo = {}
     for eq, prefijo in [(EQUIPO_A, "A"), (EQUIPO_B, "B")]:
@@ -521,11 +519,6 @@ def generar_mapeo_robots(tracking: pd.DataFrame):
     return mapeo
 
 def mapeo_desde_eventos(eventos: pd.DataFrame):
-    """
-    Etiqueta de robot ('A·R1', 'B·R2', ...) a partir del equipo declarado en los
-    PROPIOS eventos. No depende del tracking, así que el id del evento nunca se
-    confunde con el id del tracking.
-    """
     df = eventos[eventos["robot_id"] >= 0][["robot_id", "equipo"]].drop_duplicates()
     mapeo = {}
     for eq, prefijo in [(EQUIPO_A, "A"), (EQUIPO_B, "B")]:
@@ -535,12 +528,9 @@ def mapeo_desde_eventos(eventos: pd.DataFrame):
     return mapeo
 
 def posiciones_control_balon(tracking: pd.DataFrame, eventos: pd.DataFrame):
-    """
-    Por cada robot, la posición promedio del BALÓN en los frames donde ese robot
-    controló la pelota. Ancla los nodos de la Red de pases donde de verdad ocurrió
-    la acción (igual que el GIF) y, de nuevo, sin cruzar ids con el tracking.
-    """
-    controles = eventos[eventos["evento"] == EVENTO_CONTROL]
+    eventos_validos = [EVENTO_CONTROL, "Pase Completado", "Pase Interceptado"]
+    controles = eventos[eventos["evento"].isin(eventos_validos)]
+    
     acumulado = {}
     for _, ev in controles.iterrows():
         rid = int(ev["robot_id"])
@@ -552,13 +542,9 @@ def posiciones_control_balon(tracking: pd.DataFrame, eventos: pd.DataFrame):
             for rid, pts in acumulado.items() if pts}
 
 def extraer_pases(tracking: pd.DataFrame, eventos: pd.DataFrame):
-    """
-    Detecta pases a partir de los cambios de 'Control de Balon' (game_events.csv),
-    pero ubica cada pase con la posición del BALÓN en el tracking — la misma fuente
-    que el GIF. De esta forma el mapa coincide con el GIF/video y no importa si el
-    id del evento no empata con el id del tracking.
-    """
-    controles = eventos[eventos["evento"] == EVENTO_CONTROL].sort_values("frame").reset_index(drop=True)
+    eventos_validos = [EVENTO_CONTROL, "Pase Completado", "Pase Interceptado"]
+    controles = eventos[eventos["evento"].isin(eventos_validos)].sort_values("frame").reset_index(drop=True)
+    
     tiros_frames = sorted(eventos[eventos["evento"] == EVENTO_TIRO]["frame"].tolist())
     pases = []
 
@@ -569,10 +555,8 @@ def extraer_pases(tracking: pd.DataFrame, eventos: pd.DataFrame):
         rob_o = int(ev_o["robot_id"])
         rob_d = int(ev_d["robot_id"])
         if rob_o == rob_d:
-            continue  # el mismo robot sigue conduciendo: no es un pase
+            continue
 
-        # Si hubo un tiro entre ambos controles, el cambio de posesión vino del
-        # disparo (rebote/despeje), no de un pase. No lo contamos como pase.
         if any(ev_o["frame"] < tf < ev_d["frame"] for tf in tiros_frames):
             continue
 
@@ -583,7 +567,7 @@ def extraer_pases(tracking: pd.DataFrame, eventos: pd.DataFrame):
 
         eq_o = ev_o["equipo"].strip()
         eq_d = ev_d["equipo"].strip()
-        exito = (eq_o == eq_d)  # mismo equipo = completado · distinto = interceptado
+        exito = (eq_o == eq_d)
 
         pases.append({
             "origen": pos_o, "destino": pos_d,
@@ -605,7 +589,6 @@ def vista_heatmap(tracking: pd.DataFrame, _eventos):
     n_a = robots[robots["tipo_ext"] == "robot_aliado"]["objeto_id"].nunique()
     n_b = robots[robots["tipo_ext"] == "robot_rival"]["objeto_id"].nunique()
 
-    # Le indicamos mostrar_cbar=False para que no altere las proporciones
     fig, _ = heatmap(
         *_xy(robots),
         titulo="Mapa de calor · Todos los robots",
@@ -647,7 +630,6 @@ def vista_trayectoria(tracking: pd.DataFrame, _eventos):
     _titulo(ax, "Trayectorias de los robots", f"{robots_dibujados} trayectorias graficadas")
     _firma(ax)
 
-    # Leyenda muy simplificada para el usuario final
     handles = [
         plt.Line2D([0], [0], marker="o", color="none", markerfacecolor=PALETA["aliado"], markeredgecolor="white", label="Equipo A"),
         plt.Line2D([0], [0], marker="o", color="none", markerfacecolor=PALETA["rival"], markeredgecolor="white", label="Equipo B"),
@@ -670,7 +652,7 @@ def vista_pases(tracking: pd.DataFrame, eventos: pd.DataFrame):
         return
     comp = sum(1 for p in pases if p["exito"])
     print(f"  [INFO] {len(pases)} pases ({comp} completados, {len(pases)-comp} perdidos) "
-          f"ubicados sobre la trayectoria del balón (misma fuente que el GIF).")
+          f"ubicados sobre la trayectoria del balón.")
     fig, _ = mapa_pases(pases, titulo="Dirección y Éxito de Pases",
                         subtitulo=f"{len(pases)} pases · {comp} completados")
     _guardar(fig, "03_pases.png")
@@ -730,11 +712,9 @@ def vista_red_pases(tracking: pd.DataFrame, eventos: pd.DataFrame):
     pases = extraer_pases(tracking, eventos)
     if not pases: return
 
-    # Etiquetas y posiciones derivadas SOLO de eventos + balón (igual que el mapa y el GIF)
     mapeo = mapeo_desde_eventos(eventos)
     posiciones = posiciones_control_balon(tracking, eventos)
 
-    # Agrupar las conexiones y contar cantidad
     conexiones = {}
     for p in pases:
         clave = (p["r_origen"], p["r_destino"], p["exito"])
@@ -753,6 +733,7 @@ def vista_gif(tracking: pd.DataFrame, eventos: pd.DataFrame):
         lambda g: g[["evento", "robot_id", "equipo"]].to_dict("records")
     ).to_dict()
     frames_unicos = sorted(tracking["frame"].unique())
+    if not frames_unicos: return
     fig, ax = dibujar_cancha()
 
     def dibujar_frame(num_frame):
@@ -803,29 +784,41 @@ def vista_gif(tracking: pd.DataFrame, eventos: pd.DataFrame):
 
         _leyenda(ax, [(PALETA["aliado"], "Equipo A", "o"), (PALETA["rival"],  "Equipo B", "o"), (COLOR_BALON, "Balón", "o")], loc="upper right")
 
-    print(f"  [INFO] Renderizando {len(frames_unicos)} frames para el GIF...")
-    cuadros_png = []
-    for num_frame in frames_unicos:
-        dibujar_frame(num_frame)
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=DPI_EXPORTACION, bbox_inches="tight", facecolor=PALETA["fondo"])
-        buf.seek(0)
-        cuadros_png.append(Image.open(buf).convert("RGB"))
-    plt.close(fig)
-
-    ancho_max = max(im.width for im in cuadros_png)
-    alto_max  = max(im.height for im in cuadros_png)
-    cuadros = []
-    for im in cuadros_png:
-        lienzo = Image.new("RGB", (ancho_max, alto_max), PALETA["fondo"])
-        x = (ancho_max - im.width) // 2
-        y = (alto_max - im.height) // 2
-        lienzo.paste(im, (x, y))
-        cuadros.append(lienzo)
+    print(f"  [INFO] Renderizando {len(frames_unicos)} frames para el GIF (Flujo de memoria optimizado)...")
 
     os.makedirs(CARPETA_RESULTADOS, exist_ok=True)
     ruta_gif = os.path.join(CARPETA_RESULTADOS, "tracking_visualization.gif")
-    cuadros[0].save(ruta_gif, save_all=True, append_images=cuadros[1:], duration=int(1000 / FPS), loop=0)
+
+    DPI_GIF = 70
+
+    def generador_frames():
+        for num_frame in frames_unicos[1:]:
+            dibujar_frame(num_frame)
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=DPI_GIF, facecolor=PALETA["fondo"])
+            buf.seek(0)
+            im = Image.open(buf).convert("RGB")
+            yield im
+            buf.close()
+            gc.collect()
+
+    dibujar_frame(frames_unicos[0])
+    buf_ini = io.BytesIO()
+    fig.savefig(buf_ini, format="png", dpi=DPI_GIF, facecolor=PALETA["fondo"])
+    buf_ini.seek(0)
+    im_ini = Image.open(buf_ini).convert("RGB")
+
+    im_ini.save(
+        ruta_gif,
+        save_all=True,
+        append_images=generador_frames(),
+        duration=int(1000 / FPS),
+        loop=0
+    )
+
+    im_ini.close()
+    buf_ini.close()
+    plt.close(fig)
     print(f"  [ÉXITO] GIF guardado en: {ruta_gif}")
 
 
