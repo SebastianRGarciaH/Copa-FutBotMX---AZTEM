@@ -1,18 +1,16 @@
 # 🎬 Guion del Video Demo - Copa FutBotMX
 
-**Equipo:** AZTEM
-**Categoría:** Amateur
-**Duración Objetivo:** 2 Minutos
+**Equipo:** AZTEM  
+**Categoría:** Amateur  
+**Duración Objetivo:** 2 Minutos  
 
 ---
 
 | Tiempo | Visual (Lo que se ve en pantalla) | Audio (Voz en off / Narración) |
 | :--- | :--- | :--- |
-| **0:00 - 0:15** | Presentación inicial (Puede ser el logo del equipo o una placa de título de la Copa FutBotMX). | > "Somos el equipo AZTEM, categoría Amateur de la Copa FutBotMX. Desarrollamos una herramienta de análisis de video usando Visión por Computadora e IA." |
-| **0:15 - 0:35** | Mostrar el problema: Video original del partido reproduciéndose normalmente. | > "A simple vista es difícil saber dónde estuvo el balón, cuánto recorrieron los robots o quién tuvo más posesión." |
-| **0:35 - 1:00** | Mostrar la segmentación: Video con las máscaras superpuestas identificando cada elemento. | > "Aplicamos SAM 2/3 para identificar automáticamente el balón y cada robot en cada frame." |
-| **1:00 - 1:20** | Mostrar el tracking: Video mostrando los puntos (centroides) y las líneas de trayectorias. | > "A partir de las máscaras, calculamos el centroide de cada objeto y lo seguimos frame a frame." |
-| **1:20 - 1:40** | Mostrar visualizaciones: Pantalla enfocada en el mapa de calor y el dashboard de métricas. | > "Con los datos generamos el mapa de calor y calculamos métricas: distancia recorrida, zonas de mayor actividad y posesión aproximada." |
-| **1:40 - 2:00** | Cierre: Despedida, vista rápida del repositorio en GitHub o placa de agradecimiento. | > "Este pipeline abre la puerta al análisis automatizado de partidos de fútbol robótico. Como trabajo futuro, exploraremos detección de eventos como pases y tiros." |
-
----
+| **0:00 - 0:08** | **Presentación Rápida:** Logo del equipo AZTEM y título del proyecto. Transición rápida al problema. | > "Somos AZTEM, de la categoría Amateur. Presentamos nuestra herramienta de análisis de video con IA para la Copa FutBotMX." |
+| **0:08 - 0:25** | **El Problema:** Video original del partido reproduciéndose normalmente (puede ser una toma limpia). | > "Durante un partido, es casi imposible analizar a simple vista la posición exacta del balón o el rendimiento y recorrido de cada robot." |
+| **0:25 - 0:55** | **Segmentación Multivista:** Pantalla dividida en dos. A un lado el video con **vista aérea** y al otro la **vista lateral** reproduciéndose al mismo tiempo. Ambos muestran las máscaras de segmentación superpuestas sobre los robots y el balón. | > "Para solucionarlo, aplicamos modelos como SAM 2 o 3. Esto nos permite segmentar e identificar automáticamente cada elemento en la cancha, sincronizando múltiples perspectivas, como la vista aérea y lateral simultáneamente." |
+| **0:55 - 1:35** | **Tracking y Simulación:** Pantalla dividida. De un lado, el **video original reiniciado** (limpio). Del otro lado, el **GIF de la simulación** mostrando los puntos (centroides) y las líneas de trayectoria, moviéndose en perfecta sincronía con el video. | > "Calculamos los centroides a partir de esas máscaras. Aquí podemos ver el video original sincronizado con nuestra simulación digital. Esto nos permite hacer un seguimiento preciso frame a frame y trazar la trayectoria real de toda la jugada." |
+| **1:35 - 1:50** | **Visualizaciones y Resultados:** Pantalla enfocada en el mapa de calor y el dashboard de métricas generado. | > "Toda esta información se traduce en mapas de calor y métricas clave: distancia recorrida por robot, zonas de mayor actividad y el porcentaje de posesión." |
+| **1:50 - 2:00** | **Cierre Rápido:** Breve vistazo al repositorio de GitHub haciendo scroll rápido o una placa final de agradecimiento. | > "Este pipeline es la base para el análisis automatizado y futuros detectores de jugadas complejas. ¡Gracias por su atención!" |

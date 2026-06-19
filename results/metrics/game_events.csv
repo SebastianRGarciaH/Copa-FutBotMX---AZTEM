@@ -1,14 +1,9 @@
 frame,tiempo,evento,robot_implicado,equipo,detalles
-0,0.0,Control de Balon,2,Equipo A,Robot 2 dominó la pelota libre
-17,0.68,Control de Balon,1,Equipo A,Robot 1 dominó la pelota libre
-33,1.32,Control de Balon,1,Equipo A,Robot 1 dominó la pelota libre
-39,1.56,Control de Balon,2,Equipo A,Robot 2 dominó la pelota libre
-42,1.68,Control de Balon,2,Equipo A,Robot 2 dominó la pelota libre
-58,2.32,Control de Balon,2,Equipo A,Robot 2 dominó la pelota libre
-62,2.48,Control de Balon,2,Equipo A,Robot 2 dominó la pelota libre
-120,4.8,Control de Balon,2,Equipo A,Robot 2 dominó la pelota libre
-130,5.2,Tiro a Gol / Despeje,2,Equipo A,Disparo potente del Robot 2 a 329.6 cm/s
-132,5.28,Control de Balon,3,Equipo B,Robot 3 dominó la pelota libre
-207,8.28,Control de Balon,2,Equipo A,Robot 2 dominó la pelota libre
-209,8.36,Tiro a Gol / Despeje,2,Equipo A,Disparo potente del Robot 2 a 88.0 cm/s
-210,8.4,Control de Balon,2,Equipo A,Robot 2 dominó la pelota libre
+2781,111.24,Control de Balon,3,Equipo B,Robot 3 dominó la pelota libre
+2813,112.52,Tiro a Gol / Despeje,3,Equipo B,Disparo potente del Robot 3 a 134.0 cm/s
+2817,112.68,Control de Balon,3,Equipo B,Robot 3 dominó la pelota libre
+2827,113.08,Control de Balon,3,Equipo B,Robot 3 dominó la pelota libre
+2846,113.84,Tiro a Gol / Despeje,3,Equipo B,Disparo potente del Robot 3 a 111.9 cm/s
+2937,117.48,Control de Balon,2,Equipo A,Robot 2 dominó la pelota libre
+3007,120.28,Control de Balon,2,Equipo A,Robot 2 dominó la pelota libre
+3037,121.48,Pase Completado,1,Equipo A,Pase exitoso recibido del Robot 2

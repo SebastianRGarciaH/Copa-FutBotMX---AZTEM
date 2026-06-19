@@ -1,5 +1,8 @@
 # Reel
 
-Resumen dinámico de 30 segundos mostrando el tracking del balón y nuestros mapas de calor generados con SAM 3:
+Para la divulgación compartimos el siguiente link: **[Ver original en Instagram](https://instagram.com/reel/simulacion_reel_futbotmx)**
 
-📱 **[Ver Reel en Instagram](https://instagram.com/reel/simulacion_reel_futbotmx)**
+<video src="assets/simulacion_reel.mp4" controls="controls" style="max-width: 100%;">
+  Tu navegador no soporta el elemento de video.
+</video>
+
