@@ -2,7 +2,7 @@
 
 **Equipo:** AZTEM  
 **Categoría:** Amateur  
-**Duración Objetivo:** 2 Minutos  
+**Duración Objetivo:** 2 Min 
 
 ---
 
