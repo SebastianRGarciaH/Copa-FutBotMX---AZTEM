@@ -182,7 +182,7 @@ El script de visualización genera de forma automática los siguientes recursos 
      ejemplo desde results/visualizations/ y results/masks/ -->
 
 ![heatmap de ejemplo](results/visualizations/01_heatmap.png)
-![overlay de segmentación de ejemplo](media/samples/overlay_ejemplo.jpg)
+![overlay de segmentación de ejemplo](results/overlays/frame_00030_overlay.jpg)
 
 ---
 
