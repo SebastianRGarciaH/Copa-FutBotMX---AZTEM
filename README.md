@@ -54,7 +54,7 @@ Video Original
   → 08_export_demo_video.py      (Video Demo Final)
 ```
 
-> **Nota:** `00_preprocess.py` y `05_generate_dashboard.py` no estaban en este diagrama originalmente; se agregan aquí porque sí forman parte del flujo real (`00` recorta y endereza la cancha antes de segmentar; `05` consume las imágenes de `06` y los eventos de `07` para armar el dashboard final).
+
 
 ---
 
