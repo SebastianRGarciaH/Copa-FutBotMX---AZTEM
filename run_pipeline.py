@@ -1,23 +1,4 @@
 """
-run_pipeline.py — Corredor maestro del pipeline Copa FutBotMX (Equipo AZTEM)
-
-Por qué existe este archivo: el orden NUMÉRICO de los nombres de los
-scripts (00, 01, 02... 08) NO coincide con el orden REAL en el que deben
-ejecutarse según sus dependencias de datos. En particular:
-
-  - 07_detect_events.py debe correr ANTES que 06_generate_visualizations.py
-    (varias vistas de 06 -- pases, tiros, posesión, red de pases -- leen
-    el CSV de eventos que genera 07).
-  - 05_generate_dashboard.py debe correr DESPUÉS de 06 y 07 (consume las
-    imágenes que genera 06 y el CSV de eventos de 07).
-
-Si alguien corre los scripts sueltos siguiendo el número del nombre de
-archivo, el dashboard y varias visualizaciones saldrán vacías o
-incompletas. Este script corre todo en el orden de dependencias real.
-
-Colocar este archivo en la RAÍZ del proyecto (al mismo nivel que las
-carpetas data/, results/ y src/).
-
 Uso:
     python run_pipeline.py                # corre todo el pipeline
     python run_pipeline.py --desde 03      # reanuda desde un paso específico
@@ -31,14 +12,7 @@ import argparse
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR  = os.path.join(ROOT_DIR, "src")
 
-# (código, archivo, es_crítico)
-# es_crítico=True  -> si falla, se detiene todo el pipeline (algo aguas
-#                      abajo seguro también va a fallar).
-# es_crítico=False -> si falla, se avisa y se continúa (ej. el paso 08
-#                      depende de la vista lateral, que puede no existir
-#                      aún -- no tiene sentido tumbar todo el pipeline
-#                      por el video demo final).
-PASOS = [
+
     ("01", "01_extract_frames.py",          True),
     ("00", "00_preprocess.py",              True),
     ("02", "02_segment_with_sam.py",        True),
@@ -85,7 +59,7 @@ def main():
     args = parser.parse_args()
 
     env = os.environ.copy()
-    env["AUTO_CONFIRM"] = "1"  # evita que 00_preprocess.py se quede esperando input()
+    env["AUTO_CONFIRM"] = "1"  # lo puse porque cuando yo hacia pruebas tenia que comprobar, entonces con esto lo quito
 
     if args.solo:
         paso = next((p for p in PASOS if p[0] == args.solo), None)
