@@ -1,11 +1,5 @@
-Aquí tienes el código limpio, sin ningún comentario:
-
-```python
 import os
 import time
-
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-
 import torch
 import numpy as np
 import cv2
@@ -16,14 +10,16 @@ from PIL import Image
 from sam3.model_builder import build_sam3_video_model
 from sam3.model.sam3_image_processor import Sam3Processor
 
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 FRAMES_DIR = "data/frames_processed"
 MASKS_DIR  = "results/masks"
 os.makedirs(MASKS_DIR, exist_ok=True)
 
 BORDER_MARGIN        = 70     
-MIN_CANDIDATE_SEP    = 120
+MIN_CANDIDATE_SEP    = 90
 
-SAM3_INTERVAL   = 8        
+SAM3_INTERVAL   = 8       
 SAM3_MIN_SCORE  = 0.35     
 SAM3_MIN_AREA   = 0.0015   
 SAM3_MAX_AREA   = 0.08
@@ -47,35 +43,31 @@ if torch.cuda.is_available():
         autocast_dtype = torch.bfloat16
     else:
         autocast_dtype = torch.float16
-        print(f"[INFO] GPU pre-Ampere detectada (Compute Capability {cc_major}.x). Usando float16 para evitar cuellos de botella en el cómputo.")
-    
+        print(f"[INFO] GPU con compute capability {cc_major}.x (<8, pre-Ampere): usando float16 en vez de bfloat16 para evitar cómputo lento.")
     autocast_ctx = torch.autocast("cuda", dtype=autocast_dtype)
-
 elif torch.backends.mps.is_available():
     device = torch.device("mps")
     autocast_ctx = torch.autocast("mps", dtype=torch.float16)
 else:
     device = torch.device("cpu")
     autocast_ctx = nullcontext()
-
-print(f"Dispositivo activo: {device}")
+print(f"Dispositivo: {device}")
 
 BPE_PATH = "sam3/sam3/assets/bpe_simple_vocab_16e6.txt.gz"
 LOCAL_WEIGHTS_PATH = r"C:\Users\Sebastian\Documents\Copa-FutBotMX---AZTEM\sam3.pt"
 
-print("Construyendo la arquitectura de SAM3 (Video)...")
+print("Construyendo el esqueleto completo de SAM3 (Video)...")
 model = build_sam3_video_model(
     bpe_path=BPE_PATH,
     checkpoint_path=None, 
 )
 
-print(f"Inyectando los tensores originales de Meta desde: {LOCAL_WEIGHTS_PATH}")
+print(f"Inyectando tensores originales de Meta desde: {LOCAL_WEIGHTS_PATH}")
 if not os.path.exists(LOCAL_WEIGHTS_PATH):
-    raise RuntimeError(f"¡Fallo crítico! Asegúrate de tener el archivo sam3.pt en esta ruta: {LOCAL_WEIGHTS_PATH}")
+    raise RuntimeError(f"¡Fallo crítico! Mueve el archivo sam3.pt a esta carpeta. No se encontró en: {LOCAL_WEIGHTS_PATH}")
 
 checkpoint = torch.load(LOCAL_WEIGHTS_PATH, map_location="cpu")
 state_dict = checkpoint.get("model", checkpoint)
-
 model.load_state_dict(state_dict)
 model.eval()
 
@@ -84,16 +76,16 @@ print("Modelo de video sincronizado y listo.\n")
 
 if hasattr(model, "detector") and hasattr(model.detector, "backbone"):
     IMAGE_MODEL = model.detector
-    print("[OK] Submódulo de imagen encontrado en 'model.detector'.\n")
+    print("[OK] Usando 'model.detector' como submódulo de imagen para Sam3Processor.\n")
 elif hasattr(model, "backbone"):
     IMAGE_MODEL = model
-    print("[OK] El modelo tiene el '.backbone' expuesto directamente.\n")
+    print("[OK] El modelo expone '.backbone' directamente, se usa tal cual.\n")
 else:
     hijos = [n for n, _ in model.named_children()]
     raise RuntimeError(
-        "No logramos encontrar el backbone del modelo. "
-        f"Atributos disponibles en el primer nivel: {hijos}. "
-        "Revisa la estructura para pasarle el submódulo correcto al procesador."
+        "No se encontró un submódulo con atributo '.backbone' ni en 'model' "
+        f"ni en 'model.detector'. Atributos de primer nivel disponibles: {hijos}. "
+        "Revisa cuál de estos contiene el backbone."
     )
 
 def extract_masks_scores(output):
@@ -158,7 +150,7 @@ def _add_prompt(proc, state, box_norm, label, autocast_ctx):
         print(f"-----------------------------------------\n")
         return state, False
 
-def hsv_find_candidates(image, img_h, img_w):
+def hsv_find_candidates(image, img_h, img_w, field_mask=None):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     hsv  = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     edges = cv2.Canny(gray, 50, 150)
@@ -173,11 +165,11 @@ def hsv_find_candidates(image, img_h, img_w):
         for lbl in range(1, n):
             area = stats[lbl, cv2.CC_STAT_AREA]
             
-            if not (400 < area < 20000): continue 
+            if not (2500 < area < 20000): continue 
             
             bw_c = stats[lbl, cv2.CC_STAT_WIDTH]
             bh_c = stats[lbl, cv2.CC_STAT_HEIGHT]
-            if max(bw_c, bh_c) / max(min(bw_c, bh_c), 1) > 3.0: continue 
+            if max(bw_c, bh_c) / max(min(bw_c, bh_c), 1) > 2.0: continue 
             
             blob_mask = (labels == lbl).astype(np.uint8)
 
@@ -191,13 +183,16 @@ def hsv_find_candidates(image, img_h, img_w):
 
             blob_edges = cv2.bitwise_and(edges, edges, mask=blob_mask)
             edge_density = cv2.countNonZero(blob_edges) / float(area)
-            if edge_density < 0.015: continue  
+            if edge_density < 0.15: continue  
 
             cx = int(centroids[lbl, 0])
             cy = int(centroids[lbl, 1])
 
             if (cx < BORDER_MARGIN or cx > img_w - BORDER_MARGIN or
                     cy < BORDER_MARGIN or cy > img_h - BORDER_MARGIN): continue
+
+            if field_mask is not None and not field_mask[cy, cx]:
+                continue
 
             raw.append({'cx': cx, 'cy': cy, 'area': area, 'tipo': tipo, 'blob_mask': blob_mask.astype(bool), 'score': edge_density})
 
@@ -228,18 +223,14 @@ def detect_field_mask(image, img_h, img_w):
     cv2.drawContours(field_mask, [c_max], -1, 255, -1)
     return field_mask.astype(bool)
 
-_SUPPORTS_RESET_PROMPTS = None  
-
 def sam3_refine_candidates(image_pil, img_h, img_w, candidates, autocast_ctx, verbose=False):
-    global _SUPPORTS_RESET_PROMPTS
-
     if not candidates: return []
 
     fa = img_h * img_w
     all_detections = []
 
     if verbose:
-        print(f"  [DEBUG] Analizando {len(candidates)} candidatos de HSV: " +
+        print(f"  [DEBUG] {len(candidates)} candidatos HSV de entrada: " +
               ", ".join(f"({c['cx']},{c['cy']})" for c in candidates))
 
     def _circle_fallback(blob_mask, cx, cy, prompt_suffix):
@@ -255,7 +246,7 @@ def sam3_refine_candidates(image_pil, img_h, img_w, candidates, autocast_ctx, ve
             final_mask = blob_mask.astype(bool)
         return {'cx': cx, 'cy': cy, 'mask': final_mask, 'score': 0.05, 'prompt': prompt_suffix}
 
-    def _process_one_candidate(cand, proc, base_state, reencode_per_candidate):
+    def _process_one_candidate(cand, proc, base_state):
         cx, cy    = cand['cx'], cand['cy']
         blob_mask = cand['blob_mask']
 
@@ -273,19 +264,9 @@ def sam3_refine_candidates(image_pil, img_h, img_w, candidates, autocast_ctx, ve
             float(box_w)  / img_w, float(box_h)  / img_h,
         ]
 
-        state_for_prompt = base_state
-        if not reencode_per_candidate:
-            try:
-                with torch.no_grad(), autocast_ctx:
-                    state_for_prompt = proc.reset_all_prompts(base_state)
-                if state_for_prompt is None:
-                    state_for_prompt = base_state
-            except Exception as e:
-                return None, f"Fallo al resetear los prompts: {e}"
-
         try:
-            state, ok = _add_prompt(proc, state_for_prompt, box_norm, True, autocast_ctx)
-            if not ok: raise RuntimeError("El prompt geométrico falló internamente")
+            state, ok = _add_prompt(proc, base_state, box_norm, True, autocast_ctx)
+            if not ok: raise RuntimeError("add_geometric_prompt falló internamente")
             if isinstance(state, (torch.Tensor, np.ndarray)):
                 m_arr = state.float().cpu().numpy() if isinstance(state, torch.Tensor) else state
                 masks = [(m_arr > 0.5).astype(bool) if m_arr.dtype in (np.float32, np.float64) else m_arr.astype(bool)]
@@ -340,73 +321,39 @@ def sam3_refine_candidates(image_pil, img_h, img_w, candidates, autocast_ctx, ve
         MAX_DRIFT = R_HALF * 0.6
         if drift > MAX_DRIFT:
             if verbose:
-                print(f"  [DERIVA] HSV proponía ({cx},{cy}) pero SAM3 rebotó hasta ({final_cx},{final_cy}). "
-                      f"La deriva es muy alta ({drift:.0f}px), así que descartamos esta máscara y volvemos al círculo.")
+                print(f"  [DERIVA] candidato HSV=({cx},{cy}) -> SAM3 dio ({final_cx},{final_cy}), "
+                      f"deriva={drift:.0f}px > {MAX_DRIFT:.0f}px. Se descarta el mask, va a círculo.")
             return _circle_fallback(blob_mask, cx, cy, f"Circ-{cand['tipo']}(deriva)"), None
 
         return {'cx': final_cx, 'cy': final_cy, 'mask': m_clean, 'score': sc_best,
                 'prompt': f"SAM3-{cand['tipo']}"}, None
 
-    proc = Sam3Processor(IMAGE_MODEL, confidence_threshold=0.0)
-    try:
-        with torch.no_grad(), autocast_ctx:
-            base_state = proc.set_image(image_pil)
-        frame_encoded_ok = True
-    except Exception as e:
-        print(f"  [Error en set_image de SAM3, aplicando círculos a todo el frame]: {e}")
-        frame_encoded_ok = False
-        base_state = None
-
-    if not frame_encoded_ok:
-        for cand in candidates:
-            all_detections.append(_circle_fallback(cand['blob_mask'], cand['cx'], cand['cy'], f"Circ-{cand['tipo']}(oom)"))
-        del proc
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
-        final = deduplicate(all_detections)
-        return final
-
     for idx, cand in enumerate(candidates):
-        reencode_now = (_SUPPORTS_RESET_PROMPTS is False) and idx > 0
+        try:
+            proc = Sam3Processor(IMAGE_MODEL, confidence_threshold=0.0)
+            with torch.no_grad(), autocast_ctx:
+                base_state = proc.set_image(image_pil)
+        except Exception as e:
+            print(f"  [SAM3 set_image error candidato {idx}]: {e}")
+            all_detections.append(_circle_fallback(cand['blob_mask'], cand['cx'], cand['cy'], f"Circ-{cand['tipo']}(oom)"))
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+            continue
 
-        if reencode_now:
-            try:
-                with torch.no_grad(), autocast_ctx:
-                    this_base_state = proc.set_image(image_pil)
-            except Exception as e:
-                print(f"  [Error recodificando candidato {idx}]: {e}")
-                all_detections.append(_circle_fallback(cand['blob_mask'], cand['cx'], cand['cy'], f"Circ-{cand['tipo']}(oom)"))
-                if device.type == "cuda":
-                    torch.cuda.empty_cache()
-                continue
-        else:
-            this_base_state = base_state
-
-        det, err = _process_one_candidate(cand, proc, this_base_state, reencode_now)
-
-        if err is not None and _SUPPORTS_RESET_PROMPTS is None:
-            _SUPPORTS_RESET_PROMPTS = False
-            print(f"  [INFO] Ojo, reset_all_prompts() no jala ({err}). "
-                  f"Vamos a recodificar imagen por candidato en el resto del video. "
-                  f"Es más lento, pero nos asegura que funcione.")
-            try:
-                with torch.no_grad(), autocast_ctx:
-                    this_base_state = proc.set_image(image_pil)
-                det, err = _process_one_candidate(cand, proc, this_base_state, True)
-            except Exception as e:
-                det = _circle_fallback(cand['blob_mask'], cand['cx'], cand['cy'], f"Circ-{cand['tipo']}(oom)")
-                err = None
-        elif err is None and _SUPPORTS_RESET_PROMPTS is None:
-            _SUPPORTS_RESET_PROMPTS = True
-
+        det, _ = _process_one_candidate(cand, proc, base_state)
         if det is not None:
             all_detections.append(det)
 
+        del proc, base_state
         if device.type == "cuda":
             torch.cuda.empty_cache()
 
-    del proc, base_state
     final = deduplicate(all_detections)
+    if verbose:
+        print(f"  [DEBUG] {len(all_detections)} detecciones antes de dedup: " +
+              ", ".join(f"{d['prompt']}@({d['cx']},{d['cy']})sc={d['score']:.2f}" for d in all_detections))
+        print(f"  [DEBUG] {len(final)} detecciones DESPUÉS de dedup: " +
+              ", ".join(f"{d['prompt']}@({d['cx']},{d['cy']})" for d in final))
     return final
 
 def detect_ball(image, border_margin=BALL_BORDER_MARGIN):
@@ -532,14 +479,14 @@ class RobotTracker:
     def prompts_active(self):
         return [t['prompt'] for t in self.tracked.values() if t['lost']==0]
 
+
 frames = sorted(f for f in os.listdir(FRAMES_DIR) if f.endswith(".jpg"))
-frames = [f for f in frames if int(f.split('_')[1].replace('.jpg', '')) >= 1923]
 if not frames:
     raise RuntimeError(
         f"No se encontraron frames en '{FRAMES_DIR}'. "
-        f"¿Seguro que ya corriste 'python src/00_preprocess.py'?"
+        f"¿Ya corriste 'python src/00_preprocess.py'?"
     )
-print(f"Encontramos {len(frames)} frames listos para procesar en '{FRAMES_DIR}'\n")
+print(f"Frames encontrados: {len(frames)} en '{FRAMES_DIR}'\n")
 
 tracker   = RobotTracker()
 
@@ -557,10 +504,12 @@ for i, fname in enumerate(frames):
 
     h, w = image.shape[:2]
 
+    field_mask = detect_field_mask(image, h, w)
+
     if i % SAM3_INTERVAL == 0:
         image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         t_pil = time.time()
-        candidates  = hsv_find_candidates(image, h, w)
+        candidates  = hsv_find_candidates(image, h, w, field_mask=field_mask)
         t_hsv = time.time()
         detections  = sam3_refine_candidates(image_pil, h, w, candidates, autocast_ctx, verbose=(i < 3))
         t_sam3 = time.time()
@@ -578,8 +527,6 @@ for i, fname in enumerate(frames):
 
     ball_cx, ball_cy, ball_mask = detect_ball(image)
     t_ball = time.time()
-
-    field_mask = detect_field_mask(image, h, w)
 
     combined = np.zeros((h, w), dtype=np.uint8)
     overlay  = image.copy()
@@ -606,6 +553,4 @@ for i, fname in enumerate(frames):
         prompts  = "/".join(set(tracker.prompts_active)) or "-"
         print(f"  [{i+1:04d}/{len(frames)}] {det_src} tracked:{tracker.n_active}[{prompts}] | pelota:{ball_str}")
 
-print(f"\n¡Listo! Las máscaras están guardadas en '{MASKS_DIR}'")
-
-```
+print(f"\nListo. Máscaras en '{MASKS_DIR}'")
