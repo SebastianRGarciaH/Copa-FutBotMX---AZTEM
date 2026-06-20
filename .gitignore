@@ -1,0 +1,12 @@
+cat > .gitignore << 'EOF'
+# Entorno virtual
+venv/
+
+# Cache de Python
+__pycache__/
+*.pyc
+
+# Respaldos
+*_backup.py
+results/demo_final.mp4
+.vscode/
