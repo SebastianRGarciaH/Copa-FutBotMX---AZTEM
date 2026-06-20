@@ -190,7 +190,7 @@ El script de visualización genera de forma automática los siguientes recursos 
 
 El video de evaluación técnica con las capas visuales superpuestas de análisis, telemetría e infografías integradas se encuentra disponible en el siguiente enlace:
 
-🔗 [Video Demo en YouTube](#https://youtu.be/2dBXcqmnESY)
+🔗 [Video Demo en YouTube](https://youtu.be/2dBXcqmnESY)
 
 ---
 
@@ -198,7 +198,7 @@ El video de evaluación técnica con las capas visuales superpuestas de análisi
 
 Nuestra pieza de divulgación en formato vertical orientada a la difusión en redes sociales:
 
-🔗 [Instagram Reel](#https://www.instagram.com/reel/DZyoXTYMs-q/?igsh=MXdrdmo1bG5pMHBtaQ==)
+🔗 [Instagram Reel](https://www.instagram.com/reel/DZyoXTYMs-q/?igsh=MXdrdmo1bG5pMHBtaQ==)
 
 ---
 
