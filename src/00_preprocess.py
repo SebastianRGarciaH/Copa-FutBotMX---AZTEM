@@ -1,23 +1,3 @@
-"""
-00_preprocess.py — v3 (Fijado para Deep Learning)
-Copa FutBotMX — Capítulo Visión por Computadora
-
-Mejoras respecto a v2:
-  - DESACTIVADA la limpieza (clean_non_field) y CLAHE. 
-  - Justificación: Los modelos ViT (como SAM3) necesitan la varianza natural 
-    de los píxeles y texturas originales. Alterar el contraste y rellenar 
-    áreas con colores sólidos corrompía los mapas de atención del modelo.
-  - El script ahora solo realiza el recorte y la corrección de perspectiva.
-
-Flujo:
-  1. Frame 0: detectar esquinas verdes interiores → homografía
-  2. Mostrar debug → confirmar antes de procesar todo
-  3. Todos los frames: perspectiva → guardar (SIN limpieza, SIN CLAHE)
-
-Uso:
-  python src/00_preprocess.py
-"""
-
 import os
 import sys
 import cv2
