@@ -54,7 +54,7 @@ Video Original
   → 08_export_demo_video.py      (Video Demo Final)
 ```
 
-> **Nota:** `00_preprocess.py` y `05_generate_dashboard.py` no estaban en este diagrama originalmente; se agregan aquí porque sí forman parte del flujo real (`00` recorta y endereza la cancha antes de segmentar; `05` consume las imágenes de `06` y los eventos de `07` para armar el dashboard final).
+
 
 ---
 
@@ -252,4 +252,4 @@ Documentado con transparencia porque es parte de lo que valora la Categoría Ama
 - **Fragmentos sueltos tras la limpieza morfológica:** la limpieza podía romper un cuello delgado de la máscara y dejar una astilla separada del blob principal; se filtra quedándose solo con el componente conectado de mayor área.
 - **Sin marcador visual de equipo en el video:** se optó por inferir el equipo según la mitad de cancha en la que cada robot aparece por primera vez, asumiendo (como en fútbol real) que un robot no cambia de equipo a media cancha.
 - **El recorte de cancha de `00_preprocess.py` salía más chico que la cancha real:** la limpieza de la máscara de pasto usaba solo erosión para quitar ruido, lo cual encoge el contorno detectado de forma permanente. Se cambió a apertura morfológica (erosión + dilatación) para limpiar el ruido sin perder tamaño real del campo.
-- **El orden numérico de los nombres de los scripts no es el orden real de ejecución:** `07_detect_events.py` debe correr antes que `06_generate_visualizations.py`, y ambos antes que `05_generate_dashboard.py`. Documentado explícitamente en la sección 7 de este README y resuelto con `run_pipeline.py` para evitar que alguien reproduzca los resultados en el orden incorrecto.
+
