@@ -24,9 +24,6 @@ CLAHE_GRID = (8, 8)
 DARK_THRESH = 90
 CLEAN_DILATE = 25 
 
-# Detección automática de esquinas activada por defecto (corta solo donde
-# hay verde). Si falla o se ve mal en el preview, descomenta la línea de
-# abajo para volver a las esquinas fijas que ya tenías:
 MANUAL_CORNERS = None
 MANUAL_CORNERS_FALLBACK = np.array([
     [7,310 ], #ad
@@ -34,18 +31,13 @@ MANUAL_CORNERS_FALLBACK = np.array([
     [1002,1619],  # Abajo-Derecha
     [0,1794],  # Abajo-Izquierda
 ], dtype=np.float32)
-# MANUAL_CORNERS = MANUAL_CORNERS_FALLBACK   # <- descomenta esta línea para revertir
+# MANUAL_CORNERS = MANUAL_CORNERS_FALLBACK
 
 # Rango HSV de "verde cancha". Amplio a propósito para tolerar variación de
-# luz; si el recorte agarra de más (pared/graderías verdosas) prueba subir
-# GREEN_HSV_LOW un poco; si pierde pasto en sombras, bájalo.
+# luz
 GREEN_HSV_LOW  = np.array([35, 50, 50])
 GREEN_HSV_HIGH = np.array([85, 255, 255])
 
-# Ajuste fino del cuadrilátero detectado, en píxeles, antes de la homografía.
-# Positivo = encoge el recorte hacia el centro (si te quedó una franja de
-# fondo/pared visible). Negativo = lo expande hacia afuera (si te está
-# comiendo pasto real en los bordes). Empieza en 0 y ajusta de 5 en 5.
 CORNER_MARGIN_PX = 0
 
 
@@ -87,12 +79,7 @@ def detect_field_corners(image, debug_path=None):
 
     for close_k, erode_k in [(80, 20), (60, 15), (100, 25), (50, 10)]:
         closed = cv2.morphologyEx(green, cv2.MORPH_CLOSE, np.ones((close_k, close_k), np.uint8))
-        # FIX: antes esto era solo MORPH_ERODE, que encoge el blob de forma
-        # PERMANENTE (nunca se vuelve a crecer) -- el contorno final salía
-        # sistemáticamente más chico que el verde real por ~erode_k píxeles
-        # en cada borde, comiéndose pasto real en el recorte. MORPH_OPEN
-        # (erosiona y luego dilata con el mismo kernel) limpia el ruido
-        # pequeño igual, pero el blob principal recupera su tamaño real.
+
         opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, np.ones((erode_k, erode_k), np.uint8))
         cnts, _ = cv2.findContours(opened, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
@@ -217,8 +204,8 @@ print(f"\n  Resolución de salida: {OUTPUT_W}x{OUTPUT_H}")
 
 # ── Paso 3: Preview del frame 0 ───────────────────────────────────────────
 proc0 = cv2.warpPerspective(frame_0, H, (OUTPUT_W, OUTPUT_H))
-# proc0 = clean_non_field(proc0)  <-- DESACTIVADO
-# proc0 = apply_clahe(proc0)      <-- DESACTIVADO
+# proc0 = clean_non_field(proc0)  
+# proc0 = apply_clahe(proc0)      
 preview_path = os.path.join(DEBUG_DIR, "frame_0_processed.jpg")
 cv2.imwrite(preview_path, proc0)
 print(f"  Preview guardado en: {preview_path}")
@@ -243,7 +230,6 @@ for i, fname in enumerate(frames):
     # 1. Corrección de perspectiva → solo el campo interior
     proc = cv2.warpPerspective(img, H, (OUTPUT_W, OUTPUT_H))
 
-    # 2. Funciones clásicas DESACTIVADAS para no romper a SAM3 
     # proc = clean_non_field(proc) 
     # proc = apply_clahe(proc)     
 
