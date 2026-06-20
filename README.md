@@ -114,7 +114,7 @@ python src/08_export_demo_video.py      # Ensambla el video demo final
 Para correr de manera automatizada todo el flujo de inicio a fin con un solo comando:
 
 ```bash
-python src/07_full_pipeline.py
+python run_pipeline.py
 ```
 
 > **Forma recomendada (actualizada):** el corredor maestro real de este repositorio es `run_pipeline.py`, ubicado en la raíz del proyecto (no dentro de `src/`). Ejecuta los 9 módulos en el orden correcto de dependencias automáticamente (incluye `00_preprocess.py` y `05_generate_dashboard.py`, y respeta el orden real 07→06 explicado arriba):
