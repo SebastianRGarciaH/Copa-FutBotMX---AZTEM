@@ -190,7 +190,7 @@ El script de visualización genera de forma automática los siguientes recursos 
 
 El video de evaluación técnica con las capas visuales superpuestas de análisis, telemetría e infografías integradas se encuentra disponible en el siguiente enlace:
 
-🔗 [Enlace al Video Demo de 2 minutos](#)
+🔗 (https://studio.youtube.com/video/2dBXcqmnESY/edit)](#)
 
 ---
 
