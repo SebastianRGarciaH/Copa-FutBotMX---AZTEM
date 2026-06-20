@@ -198,7 +198,7 @@ El video de evaluación técnica con las capas visuales superpuestas de análisi
 
 Nuestra pieza de divulgación en formato vertical orientada a la difusión en redes sociales:
 
-🔗 [Enlace al Instagram Reel (Mínimo 30 segundos)](#)
+🔗 [(https://www.instagram.com/reel/DZyoXTYMs-q/?igsh=MXdrdmo1bG5pMHBtaQ==)](#)
 
 ---
 
