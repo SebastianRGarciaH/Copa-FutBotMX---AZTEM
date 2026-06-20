@@ -54,7 +54,7 @@ else:
 print(f"Dispositivo: {device}")
 
 BPE_PATH = "sam3/sam3/assets/bpe_simple_vocab_16e6.txt.gz"
-LOCAL_WEIGHTS_PATH = r"C:\Users\Sebastian\Documents\Copa-FutBotMX---AZTEM\sam3.pt"
+LOCAL_WEIGHTS_PATH = os.path.join(ROOT_DIR, "sam3.pt")
 
 print("Construyendo el esqueleto completo de SAM3 (Video)...")
 model = build_sam3_video_model(
