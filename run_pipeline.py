@@ -12,7 +12,7 @@ import argparse
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR  = os.path.join(ROOT_DIR, "src")
 
-
+PASOS = [
     ("01", "01_extract_frames.py",          True),
     ("00", "00_preprocess.py",              True),
     ("02", "02_segment_with_sam.py",        True),
